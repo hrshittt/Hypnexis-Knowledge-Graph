@@ -1,0 +1,10 @@
+{
+  "description": "Legal research questions for the fictional Coastal State sample laws.",
+  "questions": [
+    {"category": "factual", "question": "What must a business do after a personal data breach?"},
+    {"category": "factual", "question": "Who is exempt from the refund rule?"},
+    {"category": "factual", "question": "What penalties apply for failing to secure personal data?"},
+    {"category": "thematic", "question": "What are the main obligations across these laws?"},
+    {"category": "factual", "question": "What does the Clean Horizon Act require?"}
+  ]
+}

@@ -76,7 +76,9 @@ class KBSettings:
 
     @property
     def gemini_key_present(self) -> bool:
-        return bool(os.getenv("GEMINI_API_KEY", "").strip())
+        # the placeholder copied from .env.example ("your_gemini_api_key_here") is not a key
+        key = os.getenv("GEMINI_API_KEY", "").strip()
+        return bool(key) and not key.lower().startswith(("your_", "your-", "changeme", "<"))
 
     @property
     def llm_enabled(self) -> bool:

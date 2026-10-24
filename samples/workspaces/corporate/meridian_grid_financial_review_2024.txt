@@ -1,0 +1,33 @@
+Meridian Grid Annual Report 2024: Financial Review
+
+Fictional sample document for the Hypnexis demo. Meridian Grid, its figures and its people are invented.
+
+Financial Highlights
+
+All figures are in US dollars unless stated otherwise. Meridian Grid reported total revenue of $412.5 million in fiscal 2024, up from $380.2 million in fiscal 2023. EBITDA was $96.4 million in fiscal 2024, compared with $101.8 million in fiscal 2023. Operating profit fell to $54.1 million in fiscal 2024 from $63.7 million in fiscal 2023. Net profit declined to $31.2 million in fiscal 2024 from $42.9 million in fiscal 2023.
+
+Elena Vasquez, the chief executive officer of Meridian Grid, said that higher depreciation and financing costs from the storage build-out reduced profitability during the year.
+
+Balance Sheet
+
+At the end of fiscal 2024, total assets were $1,284.0 million and total liabilities were $842.6 million. Cash and cash equivalents stood at $58.3 million at the end of fiscal 2024, down from $91.5 million at the end of fiscal 2023. Total debt rose to $512.0 million in fiscal 2024 from $430.0 million in fiscal 2023, mainly to fund the expansion of the Harbor Storage Facility.
+
+Cash Flow
+
+Net cash from operating activities was $72.6 million in fiscal 2024, compared with $88.1 million in fiscal 2023. Capital expenditure increased to $118.4 million in fiscal 2024 from $64.0 million in fiscal 2023, driven by new battery capacity at the Harbor Storage Facility.
+
+Segments
+
+The transmission segment generated revenue of $251.0 million in fiscal 2024. The storage services segment generated revenue of $96.3 million in fiscal 2024, up from $61.4 million in fiscal 2023.
+
+Risk Factors
+
+Our results depend on the rate plans approved by the Coastal Energy Commission, and a delayed or reduced rate decision could materially and adversely affect revenue. Higher interest rates may increase the cost of refinancing the term loan that matures in 2026. The Harbor Storage Facility relies on sodium-ion batteries supplied by Voltaic Systems, so a supply disruption at a single supplier could delay the expansion. A significant cyber incident affecting grid control systems could disrupt operations and lead to regulatory penalties. Covenants in our credit facilities require net debt to remain below 4.0 times EBITDA.
+
+Governance
+
+The audit committee of the board reviewed internal controls over financial reporting during fiscal 2024 and reported no material weaknesses.
+
+Outlook
+
+Management expects capital expenditure to remain elevated in fiscal 2025 as battery capacity doubles, and plans to extend the rooftop solar pilot with the Aurora Institute to Kestrel Bay.

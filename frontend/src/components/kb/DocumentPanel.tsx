@@ -17,12 +17,19 @@ interface Props {
   onRetry: (docId: string) => void;
   onReset: () => void;
   onDismissResults: () => void;
+  /** permissions the server will enforce anyway; the panel only hides what would be refused */
+  canUpload?: boolean;
+  canDelete?: boolean;
+  readOnlyNote?: string;
+  collapsible?: boolean;
+  uploadLimits?: { max_mb: number; types: string[] };
 }
 
 const ACCEPT = '.pdf,.txt,.md';
 
 export default function DocumentPanel(p: Props) {
-  const { open } = p;
+  const { canUpload = true, canDelete = true, collapsible = true } = p;
+  const open = collapsible ? p.open : true;
   const [drag, setDrag] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const issues = p.lastUpload.filter((r) => r.status !== 'queued');
@@ -35,18 +42,29 @@ export default function DocumentPanel(p: Props) {
 
   return (
     <section className="border-b border-slate-200 bg-white">
-      <button onClick={p.onToggle} className="flex w-full items-center justify-between px-4 py-2.5" aria-expanded={open}>
-        <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+      {collapsible ? (
+        <button onClick={p.onToggle} className="flex w-full items-center justify-between px-4 py-2.5" aria-expanded={open}>
+          <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+            <FileText className="h-4 w-4 text-slate-500" /> Documents
+            <span className="rounded-full bg-slate-100 px-2 text-xs font-medium text-slate-600">{ready} ready</span>
+            {p.runningJobs.length > 0 && <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-600" />}
+          </span>
+          {open ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+        </button>
+      ) : (
+        <div className="flex w-full items-center gap-2 px-4 py-2.5 text-sm font-semibold text-slate-800">
           <FileText className="h-4 w-4 text-slate-500" /> Documents
           <span className="rounded-full bg-slate-100 px-2 text-xs font-medium text-slate-600">{ready} ready</span>
           {p.runningJobs.length > 0 && <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-600" />}
-        </span>
-        {open ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
-      </button>
+        </div>
+      )}
 
       {open && (
         <div className="space-y-3 px-4 pb-3">
-          <div
+          {!canUpload && p.readOnlyNote && (
+            <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 ring-1 ring-slate-200">{p.readOnlyNote}</p>
+          )}
+          {canUpload && <div
             onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
             onDragLeave={() => setDrag(false)}
             onDrop={(e) => { e.preventDefault(); setDrag(false); pick(e.dataTransfer.files); }}
@@ -61,17 +79,20 @@ export default function DocumentPanel(p: Props) {
             <FileUp className="h-6 w-6 shrink-0 text-brand-600" />
             <div className="min-w-0 text-sm">
               <div className="font-medium text-slate-800">Drop PDF / TXT files or click to browse</div>
-              <div className="text-xs text-slate-500">Multiple files · duplicates and unreadable files are rejected with a reason</div>
+              <div className="text-xs text-slate-500">
+                {p.uploadLimits ? `${p.uploadLimits.types.join(', ')} · up to ${p.uploadLimits.max_mb} MB each · ` : 'Multiple files · '}
+                duplicates and unreadable files are rejected with a reason
+              </div>
             </div>
-            <input ref={input} type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => pick(e.target.files)} />
-          </div>
+            <input ref={input} type="file" multiple accept={p.uploadLimits ? p.uploadLimits.types.join(',') : ACCEPT} className="hidden" onChange={(e) => pick(e.target.files)} />
+          </div>}
 
           <div className="flex flex-wrap items-center gap-2">
-            <button onClick={p.onLoadSamples} disabled={p.busy}
+            {canUpload && <button onClick={p.onLoadSamples} disabled={p.busy}
               className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-500 disabled:opacity-50">
               <Sparkles className="h-3.5 w-3.5" /> Load sample documents
-            </button>
-            {p.documents.length > 0 && (
+            </button>}
+            {canDelete && p.documents.length > 0 && (
               <button
                 onClick={() => window.confirm('Delete every document and the whole knowledge graph?') && p.onReset()}
                 className="rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-red-50 hover:text-red-600">
@@ -123,12 +144,12 @@ export default function DocumentPanel(p: Props) {
                         : d.status === 'failed' ? d.error : d.status}
                     </div>
                   </div>
-                  {d.status === 'failed' && (
+                  {canUpload && d.status === 'failed' && (
                     <button onClick={() => p.onRetry(d.doc_id)} title="Retry ingestion" className="rounded p-1 text-slate-400 hover:bg-white hover:text-brand-600">
                       <RotateCcw className="h-3.5 w-3.5" />
                     </button>
                   )}
-                  {d.status !== 'processing' && d.status !== 'queued' && (
+                  {canDelete && d.status !== 'processing' && d.status !== 'queued' && (
                     <button
                       onClick={() => window.confirm(`Remove “${d.filename}” and everything extracted only from it?`) && p.onDelete(d.doc_id)}
                       title="Remove document"

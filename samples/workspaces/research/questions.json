@@ -1,0 +1,11 @@
+{
+  "description": "Research questions for the fictional sample papers.",
+  "questions": [
+    {"category": "thematic", "question": "What are the main themes across these papers?"},
+    {"category": "factual", "question": "What problem is the coal retirement study trying to solve?"},
+    {"category": "factual", "question": "What are the limitations of the coal retirement study?"},
+    {"category": "factual", "question": "Which dataset does the sodium-ion storage paper use?"},
+    {"category": "comparison", "question": "Compare the coal retirement study with the sodium-ion storage paper."},
+    {"category": "multi_hop", "question": "How is the Harbor Coal Plant connected to childhood asthma?"}
+  ]
+}

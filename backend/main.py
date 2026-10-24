@@ -1,9 +1,13 @@
 """
 FastAPI Main Application
 ========================
-Hosts two products on one server:
-  - Interactive Knowledge Base (Topic-Augmented Knowledge Graph Builder) — /api/kb/*
-  - CEO Digital Twin (original agentic RAG chat)                          — /api/chat/*, /api/voice/*
+Hypnexis — knowledge graph intelligence platform. One server hosts:
+  - Shared demo knowledge graph (Topic-Augmented Knowledge Graph Builder)  — /api/kb/*
+  - Accounts and sessions                                                  — /api/auth/*
+  - Workspaces with isolated knowledge bases                               — /api/workspaces/*
+      corporate / research / legal analyses, placement intelligence
+  - Cross-workspace dashboard, documents, search, activity, saved analyses — /api/overview, /api/search, …
+  - CEO Digital Twin (original agentic RAG chat)                           — /api/chat/*, /api/voice/*
 
 Run: uvicorn backend.main:app --reload --port 8000
 
@@ -21,9 +25,17 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
+from backend import services
+from backend.api.auth import router as auth_router
 from backend.api.chat import router as chat_router
+from backend.api.intel import router as intel_router
 from backend.api.kb import router as kb_router
+from backend.api.placement import router as placement_router
+from backend.api.platform import router as platform_router
 from backend.api.voice import router as voice_router
+from backend.api.workspaces import kb_router as workspace_kb_router
+from backend.api.workspaces import router as workspaces_router
+from backend.config import real_secret
 from backend.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -33,6 +45,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 # ─── Startup state (so /health can report accurately) ────────────────────────
 _startup_status: dict = {
+    "platform_db": False,
     "knowledge_base": False,
     "retriever": False,
     "memory": False,
@@ -53,6 +66,15 @@ async def lifespan(app: FastAPI):
     """
     log.info("=" * 60)
     log.info("🚀 Server starting up...")
+
+    try:
+        db = services.db()
+        log.success(f"   Platform database ready (schema v{db.schema_version()}): {services.settings().db_path}")
+        _startup_status["platform_db"] = True
+    except Exception as e:
+        _startup_status["platform_db"] = False
+        log.error(f"   Platform database failed to open (sign-in and workspaces unavailable): {e}")
+    log.info(f"   Shared knowledge graph writes: {app.state.shared_kb_write} (KB_SHARED_WRITE)")
 
     log.info("   Warming up Knowledge Base (embedder, reranker, graph store)...")
     try:
@@ -84,7 +106,7 @@ async def lifespan(app: FastAPI):
     else:
         log.info("   CEO twin retriever/memory: lazy (set WARMUP_LEGACY_CEO=1 to warm up)")
 
-    gemini_key_set = bool(os.getenv("GEMINI_API_KEY", "").strip())
+    gemini_key_set = real_secret(os.getenv("GEMINI_API_KEY", ""))  # the .env.example placeholder isn't a key
     if gemini_key_set:
         log.info("   Warming up Gemini Client...")
         try:
@@ -109,7 +131,7 @@ async def lifespan(app: FastAPI):
         log.warning(f"   LangGraph compile failed: {e}")
 
     # Only components we actually tried to start count as failures (lazy ones are not failures).
-    expected = ["knowledge_base", "graph"]
+    expected = ["knowledge_base", "graph", "platform_db"]
     if WARMUP_LEGACY:
         expected += ["retriever", "memory"]
     if gemini_key_set:
@@ -128,10 +150,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Interactive Knowledge Base + CEO Digital Twin",
-    description="Topic-augmented knowledge graph builder with grounded, graph-aware answers "
-                "(plus the original agentic RAG CEO twin).",
-    version="3.0.0",
+    title="Hypnexis — Knowledge Graph Intelligence Platform",
+    description="Evidence-backed answers and interactive knowledge graphs for corporate, research, legal and "
+                "placement intelligence (plus the original agentic RAG CEO twin).",
+    version="4.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
@@ -140,6 +162,20 @@ app = FastAPI(
 # ─── Rate Limiter middleware ──────────────────────────────────────────────────
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Who may change the shared demo graph at /api/kb (admin | authenticated | public).
+app.state.shared_kb_write = services.settings().shared_kb_write
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    if request.url.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
 
 # ─── CORS (restricted to known origins) ──────────────────────────────────────
 ALLOWED_ORIGINS = [
@@ -164,6 +200,12 @@ app.add_middleware(
 
 # ─── Routers ─────────────────────────────────────────────────────────────────
 app.include_router(kb_router)
+app.include_router(auth_router)
+app.include_router(workspaces_router)
+app.include_router(workspace_kb_router)
+app.include_router(placement_router)
+app.include_router(intel_router)
+app.include_router(platform_router)
 app.include_router(chat_router)
 app.include_router(voice_router)
 
@@ -194,7 +236,8 @@ async def health():
         checks["memory"] = False
     try:
         from backend.utils.gemini_client import get_pool
-        checks["gemini_client"] = get_pool() is not None
+        # the .env.example placeholder is not a key, so a pool built from it doesn't count
+        checks["gemini_client"] = real_secret(os.getenv("GEMINI_API_KEY", "")) and get_pool() is not None
     except Exception:
         checks["gemini_client"] = False
     try:
@@ -205,10 +248,16 @@ async def health():
 
     # The knowledge base works without Gemini (heuristic/extractive mode)
     status = "ok" if checks["knowledge_base"] else "degraded"
+    try:
+        services.db().one("SELECT 1 AS ok")
+        checks["platform_db"] = True
+    except Exception:
+        checks["platform_db"] = False
+
     return {
         "status": status,
-        "service": "Interactive Knowledge Base + CEO Digital Twin",
-        "version": "3.0.0",
+        "service": "Hypnexis — Knowledge Graph Intelligence Platform",
+        "version": "4.0.0",
         "checks": checks,
         "kb_error": kb_service.kb_init_error(),
     }
@@ -217,7 +266,7 @@ async def health():
 @app.get("/")
 async def root():
     return {
-        "message": "Interactive Knowledge Base API (+ CEO Digital Twin)",
+        "message": "Hypnexis API",
         "docs": "/docs",
         "health": "/health",
         "kb": {
@@ -226,6 +275,9 @@ async def root():
             "graph": "/api/kb/graph",
             "query": "POST /api/kb/query/stream",
         },
+        "auth": "/api/auth/me",
+        "workspaces": "/api/workspaces",
+        "search": "/api/search?q=",
         "chat": "/api/chat/stream",
         "voice": "/api/voice/transcribe",
     }

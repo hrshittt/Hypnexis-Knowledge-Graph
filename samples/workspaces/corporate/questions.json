@@ -1,0 +1,12 @@
+{
+  "description": "CFO-style questions for the fictional corporate sample set.",
+  "questions": [
+    {"category": "factual", "question": "What was Meridian Grid's total revenue in fiscal 2024?"},
+    {"category": "factual", "question": "How has operating cash flow changed?"},
+    {"category": "factual", "question": "Why did net profit decline in fiscal 2024?"},
+    {"category": "thematic", "question": "What are the biggest financial risks facing Meridian Grid?"},
+    {"category": "factual", "question": "Is the company increasingly dependent on debt?"},
+    {"category": "multi_hop", "question": "How is Voltaic Systems connected to Meridian Grid?"},
+    {"category": "insufficient_evidence", "question": "What is Meridian Grid's credit rating?"}
+  ]
+}

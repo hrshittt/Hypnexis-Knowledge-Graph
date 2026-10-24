@@ -338,7 +338,23 @@ class KnowledgeBaseService:
 
     def sample_files(self) -> List[Path]:
         d = self.settings.samples_dir
-        return sorted(p for p in d.glob("*") if p.suffix.lower() in ALLOWED_TYPES) if d.exists() else []
+        files = sorted(p for p in d.glob("*") if p.suffix.lower() in ALLOWED_TYPES) if d.exists() else []
+        # Optional manifest.json {"include": ["../../x.txt"]} reuses sample documents kept elsewhere
+        # under samples/ (workspace sample sets); the root samples/ folder has none.
+        manifest = d / "manifest.json"
+        if manifest.exists():
+            import json
+            root = (Path(__file__).resolve().parents[2] / "samples").resolve()
+            try:
+                rel = json.loads(manifest.read_text(encoding="utf-8")).get("include", [])
+            except (OSError, ValueError) as e:
+                log.warning(f"Unreadable sample manifest {manifest}: {e}")
+                rel = []
+            for r in rel:
+                p = (d / r).resolve()
+                if root in p.parents and p.is_file() and p.suffix.lower() in ALLOWED_TYPES and p not in files:
+                    files.append(p)
+        return files
 
     async def ingest_files_and_wait(self, files: Sequence[Tuple[str, bytes]]) -> Dict[str, Any]:
         """Register + run synchronously (CLI, tests)."""
@@ -410,6 +426,7 @@ class KnowledgeBaseService:
             "dense_index": self.index.dense_ok, "graph_store": "sqlite", "neo4j": self.neo4j_status,
             "warnings": self.warnings,
             "jobs": [j for j in self.jobs.values() if j["status"] in ("queued", "running")],
+            "upload": {"max_mb": self.settings.max_upload_mb, "types": sorted(ALLOWED_TYPES)},
         }
 
     def documents(self) -> List[Dict[str, Any]]:

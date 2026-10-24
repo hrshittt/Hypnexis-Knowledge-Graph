@@ -1,0 +1,4 @@
+{
+  "description": "Research Intelligence demo set. Everything here is fictional; the root health study is reused unchanged.",
+  "include": ["../../port_calder_health_study.txt"]
+}
