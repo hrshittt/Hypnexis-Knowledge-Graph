@@ -69,7 +69,7 @@ export function PaperView({ wsId, docId, api, onAsk, onCompare, onOpen }: Props)
         </Card>
         {FIELD_ORDER.filter((k) => p.fields[k]).map((k) => <FieldCard key={k} field={p.fields[k]} api={api} />)}
         <p className="text-[12px] text-ink-muted">
-          Only information found in the paper is shown. Fields marked “not found” could not be extracted. Hypnexis never fills them in.
+          Only information found in the paper is shown. Fields marked “not found” could not be extracted. Paheli never fills them in.
         </p>
       </div>
       <aside className="space-y-5">

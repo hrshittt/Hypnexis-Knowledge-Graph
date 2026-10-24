@@ -16,7 +16,7 @@ interface StatTileProps {
 
 export function StatTile({ label, value, unavailable, sub, delta, definition, footer, badge, className = '' }: StatTileProps) {
   return (
-    <div className={`flex min-w-0 flex-col rounded-xl border border-line bg-white p-4 shadow-card ${className}`}>
+    <div className={`flex min-w-0 flex-col border-l-2 border-line py-1 pl-4 transition-colors hover:border-brand-600 ${className}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1">
           <span className="truncate text-[12.5px] font-medium text-ink-muted">{label}</span>

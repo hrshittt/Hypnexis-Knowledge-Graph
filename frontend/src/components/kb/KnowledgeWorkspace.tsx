@@ -208,6 +208,8 @@ export default function KnowledgeWorkspace({
                 onClear={() => { chat.clear(); setHighlight(null); setActiveTurn(null); }}
                 onSelect={select}
                 onActivate={activate}
+                onVoiceAsk={async (q) => (await chat.ask(q))?.answer ?? null}
+                voiceContext={workspaceId ? 'this workspace’s documents' : 'the shared demo documents'}
               />
             </>
           )}

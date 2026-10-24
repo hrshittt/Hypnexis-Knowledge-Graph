@@ -1,8 +1,10 @@
 import { useRef, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, FileText, FileUp, Loader2, RotateCcw, Sparkles, Trash2, X,
+  AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, FileText, FileUp, Loader2, RotateCcw, ScanText, Sparkles, Trash2, X,
 } from 'lucide-react';
 import type { Job, KBDocument, UploadResult } from '../../types/kb';
+import { Modal } from '../ui/Overlay';
+import OcrScanner from '../ocr/OcrScanner';
 
 interface Props {
   open: boolean;
@@ -31,6 +33,7 @@ export default function DocumentPanel(p: Props) {
   const { canUpload = true, canDelete = true, collapsible = true } = p;
   const open = collapsible ? p.open : true;
   const [drag, setDrag] = useState(false);
+  const [ocr, setOcr] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const issues = p.lastUpload.filter((r) => r.status !== 'queued');
   const ready = p.documents.filter((d) => d.status === 'ready').length;
@@ -88,6 +91,10 @@ export default function DocumentPanel(p: Props) {
           </div>}
 
           <div className="flex flex-wrap items-center gap-2">
+            {canUpload && <button onClick={() => setOcr(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-line-strong px-3 py-1.5 text-xs font-medium text-ink hover:bg-canvas">
+              <ScanText className="h-3.5 w-3.5 text-brand-700" /> Scan a photo (OCR)
+            </button>}
             {canUpload && <button onClick={p.onLoadSamples} disabled={p.busy}
               className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-500 disabled:opacity-50">
               <Sparkles className="h-3.5 w-3.5" /> Load sample documents
@@ -163,6 +170,10 @@ export default function DocumentPanel(p: Props) {
           )}
         </div>
       )}
+      <Modal open={ocr} onClose={() => setOcr(false)} size="lg" title="Scan a photo or scanned PDF"
+        description="Paheli reads the page in your browser. Check the text, then add it to this knowledge base.">
+        <OcrScanner compact onAdd={(f) => p.onUpload([f])} />
+      </Modal>
     </section>
   );
 }

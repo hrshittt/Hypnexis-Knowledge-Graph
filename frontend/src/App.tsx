@@ -21,6 +21,8 @@ const ActivityPage = lazy(() => import('./pages/app/ActivityPage'));
 const SavedAnalysisPage = lazy(() => import('./pages/app/SavedAnalysisPage'));
 const SettingsPage = lazy(() => import('./pages/app/SettingsPage'));
 const HelpPage = lazy(() => import('./pages/app/HelpPage'));
+const OthersPage = lazy(() => import('./pages/app/OthersPage'));
+const OcrPage = lazy(() => import('./pages/app/OcrPage'));
 
 export default function App() {
   return (
@@ -43,6 +45,8 @@ export default function App() {
           <Route path="saved/:analysisId" element={<SavedAnalysisPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="help" element={<HelpPage />} />
+          <Route path="others" element={<OthersPage />} />
+          <Route path="ocr" element={<OcrPage />} />
           <Route path="w/:workspaceId" element={<WorkspacePage />} />
           <Route path=":type" element={<WorkspaceTypeEntry />} />
           <Route path="*" element={<NotFound />} />

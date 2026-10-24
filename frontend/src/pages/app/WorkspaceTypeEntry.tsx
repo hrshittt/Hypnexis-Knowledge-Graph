@@ -63,7 +63,7 @@ export default function WorkspaceTypeEntry() {
           <h2 className="mb-3 text-[15px] font-semibold text-ink">Your {info.short.toLowerCase()} workspaces</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {mine.map((w) => (
-              <Link key={w.id} to={`/app/w/${w.id}`} className="group rounded-xl border border-line bg-white p-4 shadow-card transition-all hover:border-brand-200 hover:shadow-pop">
+              <Link key={w.id} to={`/app/w/${w.id}`} className="group rounded-xl border border-line bg-white p-4 transition-colors hover:border-brand-300">
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="text-[14.5px] font-semibold text-ink">{w.name}</h3>
                   {w.role && <Badge tone={w.role === 'owner' ? 'brand' : 'neutral'}>{ROLE_LABEL[w.role]}</Badge>}
@@ -96,7 +96,7 @@ export default function WorkspaceTypeEntry() {
             <Button type="submit" icon={<Plus className="h-4 w-4" />} loading={creating === info.type}>Create workspace</Button>
           </form>
         </Card>
-        <Card padded className="bg-canvas/50">
+        <div className="lg:border-l lg:border-line lg:pl-8">
           <h2 className="text-[15px] font-semibold text-ink">What you get</h2>
           <ul className="mt-3 space-y-2.5">
             {WHAT_YOU_GET[info.type].map((x) => (
@@ -104,7 +104,7 @@ export default function WorkspaceTypeEntry() {
             ))}
           </ul>
           <p className="mt-4 text-[12.5px] text-ink-muted">Designed for {info.audience.toLowerCase()}. Sample set: {info.sampleNote}</p>
-        </Card>
+        </div>
       </div>
     </Page>
   );

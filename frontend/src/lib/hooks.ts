@@ -93,7 +93,7 @@ export function usePreference<T>(key: string, initial: T): [T, (v: T) => void] {
 export function useDocumentTitle(title: string) {
   useEffect(() => {
     const prev = document.title;
-    document.title = title ? `${title} · Hypnexis` : 'Hypnexis — Knowledge Graph Intelligence Platform';
+    document.title = title ? `${title} · Paheli` : 'Paheli — Ask your documents anything';
     return () => { document.title = prev; };
   }, [title]);
 }

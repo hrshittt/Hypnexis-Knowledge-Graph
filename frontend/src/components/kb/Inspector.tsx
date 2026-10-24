@@ -81,6 +81,13 @@ export default function Inspector({ selection, graph, onSelect, onHighlightNodes
               {entity.aliases.length > 1 && (
                 <p className="mt-1 text-xs text-slate-500">Also: {entity.aliases.filter((a) => a !== entity.name).join(', ')}</p>
               )}
+              <PlainWords>
+                <b className="font-semibold text-ink">{entity.name}</b> is {article(entity.type)} {entity.type.toLowerCase()} found in{' '}
+                {entity.mention_count} passage{entity.mention_count === 1 ? '' : 's'} across {entity.documents.length} document{entity.documents.length === 1 ? '' : 's'}.{' '}
+                {entity.relations.length
+                  ? <>It is directly connected to {entity.relations.length} other thing{entity.relations.length === 1 ? '' : 's'}{entity.topic ? <>, mostly within the topic “{entity.topic.label}”</> : ''}. Click a connection below to read the sentence behind it.</>
+                  : 'No facts linking it to other things were found yet.'}
+              </PlainWords>
             </div>
             <Section title={`Relationships (${entity.relations.length})`} icon={<Network className="h-3.5 w-3.5" />}>
               <ul className="space-y-1">
@@ -122,6 +129,10 @@ export default function Inspector({ selection, graph, onSelect, onHighlightNodes
                 {relation.object.name}
               </button>
             </div>
+            <PlainWords>
+              This line is one fact: <b className="font-semibold text-ink">{relation.subject.name}</b> {relation.predicate}{' '}
+              <b className="font-semibold text-ink">{relation.object.name}</b>. Paheli found it in {relation.evidence.length} sentence{relation.evidence.length === 1 ? '' : 's'}, shown below with the words it read highlighted.
+            </PlainWords>
             <Section title={`Evidence (${relation.evidence.length})`} icon={<FileText className="h-3.5 w-3.5" />}>
               {relation.evidence.map((e, i) => (
                 <Passage key={i} filename={e.filename} page={e.page} badge={e.method === 'llm' ? 'Gemini-extracted' : 'rule-extracted'}>
@@ -172,6 +183,10 @@ function DocumentView({ id, graph, onSelect, onHighlightNodes }: {
         <p className="mt-1 text-xs text-slate-500">
           {doc.num_pages ?? '?'} page(s) · {doc.num_entities ?? '?'} entities · {doc.num_relations ?? '?'} relations extracted
         </p>
+        <PlainWords>
+          This is one of the files Paheli read. It mentions {links.length} of the things shown in the graph; click one below to see
+          what else is known about it.
+        </PlainWords>
       </div>
       {links.length > 0 && (
         <button onClick={() => onHighlightNodes(links.map((l) => l.entity_id))}
@@ -192,6 +207,18 @@ function DocumentView({ id, graph, onSelect, onHighlightNodes }: {
     </>
   );
 }
+
+/** A one-paragraph explanation for readers who don't know graph vocabulary. */
+function PlainWords({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mt-3 border-l-2 border-spark pl-3 text-[12.5px] leading-relaxed text-ink-soft">
+      <span className="mb-0.5 block text-[10.5px] font-semibold uppercase tracking-wide text-ink-muted">In plain words</span>
+      {children}
+    </p>
+  );
+}
+
+const article = (word: string) => (/^[aeiou]/i.test(word) ? 'an' : 'a');
 
 function TopicView({ id, graph, onSelect, api }: { id: string; graph: GraphPayload | null; onSelect: (s: Selection) => void; api: KbApi }) {
   const topic = graph?.topics.find((t) => t.id === id);

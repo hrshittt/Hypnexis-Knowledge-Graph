@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { KeyRound, Waypoints } from 'lucide-react';
 import AuthLayout from '../layouts/AuthLayout';
 import { useAuth } from '../lib/auth';
@@ -12,10 +12,10 @@ import KnowledgeWorkspace from '../components/kb/KnowledgeWorkspace';
 export function ForgotPassword() {
   useDocumentTitle('Reset your password');
   return (
-    <AuthLayout title="Reset your password" subtitle="Password resets are handled by your Hypnexis administrator."
+    <AuthLayout title="Reset your password" subtitle="Password resets are handled by your Paheli administrator."
       footer={<Link to="/login" className="font-medium text-brand-700 hover:underline">Back to sign in</Link>}>
       <div className="space-y-4 text-[14px] leading-relaxed text-ink-soft">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-700"><KeyRound className="h-5 w-5" /></div>
+        <KeyRound className="h-6 w-6 text-ink-faint" strokeWidth={1.5} />
         <p>
           This deployment doesn’t send email, so there is no self-service reset link. Ask your administrator to set a
           new password for your account. All of your existing sessions are signed out when they do.
@@ -39,11 +39,11 @@ export function Terms() {
     <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
       <h1 className="text-[30px] font-semibold tracking-tight text-ink">Terms of use and disclaimers</h1>
       <p className="mt-2 text-[14px] text-ink-muted">
-        Operators who deploy Hypnexis should review these terms and adapt them to their organisation and jurisdiction.
+        Operators who deploy Paheli should review these terms and adapt them to their organisation and jurisdiction.
       </p>
       <div className="mt-8 space-y-7 text-[14.5px] leading-relaxed text-ink-soft">
-        <Section title="What Hypnexis does">
-          Hypnexis analyses the documents and records you add to your workspaces. It builds knowledge graphs, extracts
+        <Section title="What Paheli does">
+          Paheli analyses the documents and records you add to your workspaces. It builds knowledge graphs, extracts
           figures, structure and provisions, and answers questions with references to the passages it used. It only
           knows what is in your workspace’s sources.
         </Section>
@@ -59,12 +59,12 @@ export function Terms() {
           ratings or recommendations. Check important figures against the audited statements.
         </Section>
         <Section title="Placement and student data">
-          Institutions must have the right to process the records they import. Hypnexis never imports names, contact
+          Institutions must have the right to process the records they import. Paheli never imports names, contact
           details or sensitive characteristics, even when they are mapped. It does not rank or profile students.
           Student-level records are visible only to workspace members with the analyst or owner role.
         </Section>
         <Section title="Sample data">
-          The sample documents and placement records shipped with Hypnexis are fictional and are labelled as sample
+          The sample documents and placement records shipped with Paheli are fictional and are labelled as sample
           data wherever they appear. They describe no real company, institution, law or person.
         </Section>
         <Section title="Accounts and security">
@@ -72,7 +72,7 @@ export function Terms() {
           control who can access their workspace and with which role.
         </Section>
         <Section title="No warranty">
-          Hypnexis is provided as is. Automated extraction can be incomplete or wrong. Always review the cited evidence
+          Paheli is provided as is. Automated extraction can be incomplete or wrong. Always review the cited evidence
           before you rely on an answer.
         </Section>
       </div>
@@ -94,6 +94,8 @@ export function Demo() {
   useDocumentTitle('Live demo');
   const { status, session } = useAuth();
   const api = useMemo(() => kbApi, []);
+  const [params] = useSearchParams();
+  const question = params.get('q') ?? undefined;
   const canWrite = !!session?.permissions?.shared_kb_write;
   return (
     <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
@@ -113,7 +115,7 @@ export function Demo() {
         Everything in this demo comes from fictional sample documents. It is shared with every visitor, so don’t add
         confidential material. Your own workspaces are private.
       </Notice>
-      <KnowledgeWorkspace key="shared-demo" api={api} canWrite={canWrite} canDelete={canWrite} workspaceId={null}
+      <KnowledgeWorkspace key={`shared-demo-${question ?? ''}`} api={api} canWrite={canWrite} canDelete={canWrite} workspaceId={null} initialQuestion={question}
         recordActivity={status === 'authenticated'} className="h-auto lg:h-[calc(100vh-15rem)] lg:min-h-[560px]"
         readOnlyNote={status === 'authenticated'
           ? 'The shared demo graph is read-only for your account. Upload your own documents in one of your workspaces.'

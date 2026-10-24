@@ -95,7 +95,7 @@ export default function PlacementWorkspace({ ws }: WorkspaceModuleProps) {
 
       {o?.sample_data && tab !== 'import' && (
         <Notice tone="warn" className="mb-4" title="Fictional sample data">
-          This workspace contains the generated sample records shipped with Hypnexis. They describe no real institution, company or student.
+          This workspace contains the generated sample records shipped with Paheli. They describe no real institution, company or student.
         </Notice>
       )}
 

@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Waypoints } from 'lucide-react';
+import { PlayCircle, Waypoints, X } from 'lucide-react';
 import { kbApi, workspaceKbApi } from '../../api/kb';
 import { corporateApi, legalApi, placementApi } from '../../api/platform';
 import { useAuth } from '../../lib/auth';
-import { useAsync, useDocumentTitle } from '../../lib/hooks';
+import { useAsync, useDocumentTitle, usePreference } from '../../lib/hooks';
 import { TYPE_INFO, roleAtLeast } from '../../lib/workspaceTypes';
 import type { Workspace } from '../../types/platform';
 import { Page, PageHeader } from '../../components/ui/PageHeader';
@@ -13,6 +13,7 @@ import { Card } from '../../components/ui/Card';
 import { ErrorState, Notice } from '../../components/ui/Feedback';
 import KnowledgeWorkspace from '../../components/kb/KnowledgeWorkspace';
 import AnalysisGraphPanel from '../../components/kb/AnalysisGraphPanel';
+import { openGraphExplainer } from '../../components/explain/ExplainerHost';
 
 const ANALYSIS_LABEL: Record<string, string> = { corporate: 'Company graph', legal: 'Provision graph', placement: 'Placement graph' };
 
@@ -28,13 +29,17 @@ export default function KnowledgeGraphPage() {
   const set = (k: string, v: string | null) => setParams((p) => { const n = new URLSearchParams(p); if (v === null) n.delete(k); else n.set(k, v); return n; });
 
   const sharedWrite = !!session?.permissions?.shared_kb_write;
+  const [introHidden, setIntroHidden] = usePreference('graph-intro-hidden', false);
   const api = useMemo(() => (ws ? workspaceKbApi(ws.id) : kbApi), [ws]);
 
   return (
     <Page wide>
       <PageHeader icon={<Waypoints />} title="Knowledge Graph"
-        description="Explore entities, relationships and topic communities, ask grounded questions, and inspect the evidence behind every connection."
+        description="A map of everything your documents mention and how it connects. Ask a question and the facts behind the answer light up."
         actions={<>
+          <button onClick={openGraphExplainer} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-brand-700 hover:bg-brand-50">
+            <PlayCircle className="h-4 w-4" /> What am I looking at?
+          </button>
           <Select compact value={ws ? ws.id : 'shared'} aria-label="Knowledge base" className="w-64" onChange={(e) => setParams(e.target.value === 'shared' ? {} : { scope: e.target.value })}>
             <option value="shared">Shared demo corpus</option>
             {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name} · {TYPE_INFO[w.type].short}</option>)}
@@ -45,9 +50,26 @@ export default function KnowledgeGraphPage() {
           )}
         </>} />
       <div className="mt-5">
+        {!introHidden && (
+          <div className="mb-4 flex animate-slide-up items-start gap-4 border-y border-line py-3.5">
+            <div className="flex shrink-0 items-center gap-1.5 pt-0.5" aria-hidden>
+              <span className="h-2.5 w-2.5 rounded-full bg-brand-600" />
+              <span className="h-px w-5 bg-ink-faint" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#2a78d6]" />
+            </div>
+            <p className="min-w-0 flex-1 text-[13.5px] leading-relaxed text-ink-soft">
+              <b className="font-semibold text-ink">New to knowledge graphs?</b> Each dot is a thing your documents mention, each line is a fact
+              connecting two things, and coloured areas group related things into topics.{' '}
+              <button onClick={openGraphExplainer} className="font-medium text-brand-700 hover:underline">Watch the 40-second explainer</button>
+            </p>
+            <button onClick={() => setIntroHidden(true)} className="shrink-0 rounded-md p-1 text-ink-muted hover:bg-canvas hover:text-ink" aria-label="Hide this tip">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
         {!ws && (
           <Notice tone="neutral" className="mb-3">
-            The shared demo corpus is the original Hypnexis knowledge graph, built from the fictional sample documents and visible to everyone.
+            The shared demo corpus is the original Paheli knowledge graph, built from the fictional sample documents and visible to everyone.
             {sharedWrite ? ' Your account can change it.' : ' It is read-only for your account; use a workspace for your own documents.'}
           </Notice>
         )}

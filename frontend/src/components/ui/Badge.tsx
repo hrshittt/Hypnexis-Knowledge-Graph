@@ -26,7 +26,7 @@ export function Badge({ tone = 'neutral', icon, className = '', children, ...res
 
 /** Marks clearly-labelled fictional demo content wherever it appears. */
 export function SampleBadge({ className = '' }: { className?: string }) {
-  return <Badge tone="warn" className={className} title="Fictional sample data shipped with Hypnexis for demonstration">Sample data</Badge>;
+  return <Badge tone="warn" className={className} title="Fictional sample data shipped with Paheli for demonstration">Sample data</Badge>;
 }
 
 export type { Tone as BadgeTone };

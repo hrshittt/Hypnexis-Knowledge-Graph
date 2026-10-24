@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ForceGraph2D, { type ForceGraphMethods, type LinkObject, type NodeObject } from 'react-force-graph-2d';
-import { Eraser, FileText, Maximize2, Search, Tag, Waypoints } from 'lucide-react';
+import { CircleHelp, Eraser, FileText, Maximize2, PlayCircle, Search, Tag, Waypoints, X } from 'lucide-react';
+import { usePreference } from '../../lib/hooks';
+import { openGraphExplainer } from '../explain/ExplainerHost';
 import type { GraphEdge, GraphNode, GraphPayload, Selection } from '../../types/kb';
 import {
   DOC_COLOR, DOC_HL, HL_EDGE, NO_COMMUNITY, PATH_COLOR, PATH_PARTICLE, colorForIndex, convexHull, rgba,
@@ -31,12 +33,14 @@ interface Props {
   emptyHint?: React.ReactNode;
   /** zoom level above which every edge label is drawn (hovered/highlighted edges always are) */
   edgeLabelMinScale?: number;
+  /** open the plain-language guide automatically for first-time viewers (off for small previews) */
+  autoGuide?: boolean;
 }
 
 const nodeRadius = (n: GraphNode) => Math.min(13, 3.5 + Math.sqrt(n.degree + 0.5 * n.mentions) * 1.6);
 const endId = (e: unknown) => (typeof e === 'object' && e !== null ? (e as N).id as string : (e as string));
 
-export default function GraphView({ graph, highlight, selection, focusToken, onSelect, onClearHighlight, emptyHint, edgeLabelMinScale = 2.4 }: Props) {
+export default function GraphView({ graph, highlight, selection, focusToken, onSelect, onClearHighlight, emptyHint, edgeLabelMinScale = 2.4, autoGuide = true }: Props) {
   const fgRef = useRef<ForceGraphMethods<N, L>>();
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 600, h: 500 });
@@ -45,6 +49,10 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
   const [showLabels, setShowLabels] = useState(true);
   const [showDocs, setShowDocs] = useState(true);
   const [query, setQuery] = useState('');
+  // The plain-language guide opens by itself the first time someone sees a graph.
+  const [guideSeen, setGuideSeen] = usePreference('graph-guide-seen', false);
+  const [guide, setGuide] = useState(autoGuide && !guideSeen);
+  const closeGuide = () => { setGuide(false); setGuideSeen(true); };
   const positions = useRef(new Map<string, { x: number; y: number }>());
   const fitted = useRef(false);
 
@@ -386,8 +394,9 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
           height={size.h}
           graphData={data}
           nodeId="id"
-          nodeLabel={(n) => (n.kind === 'document' ? `${n.name} · source document · mentions ${n.degree} shown entities`
-            : `${n.name} · ${n.type} · ${n.degree} relations`)}
+          nodeLabel={(n) => (n.kind === 'document'
+            ? `${n.name} — a source document that mentions ${n.degree} of the things shown. Click for details.`
+            : `${n.name} — ${n.type.toLowerCase()}, connected to ${n.degree} other thing${n.degree === 1 ? '' : 's'}. Click for details.`)}
           nodeCanvasObject={drawNode}
           nodePointerAreaPaint={paintPointer}
           linkVisibility={(l) => l.kind !== 'doc' || edgeState(l).hl || edgeState(l).hover}
@@ -406,8 +415,8 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
           linkLabel={(l) => {
             const a = nodeById.get(endId(l.source));
             const b = nodeById.get(endId(l.target));
-            if (l.kind === 'doc') return `${a?.name ?? ''} mentions ${b?.name ?? ''} (${l.evidence_count}×)`;
-            return `${a?.name ?? ''} — ${l.predicate} → ${b?.name ?? ''} (${l.evidence_count} evidence)`;
+            if (l.kind === 'doc') return `${a?.name ?? ''} mentions ${b?.name ?? ''} ${l.evidence_count === 1 ? 'once' : `${l.evidence_count} times`}.`;
+            return `${a?.name ?? ''} → ${l.predicate} → ${b?.name ?? ''} · found in ${l.evidence_count} sentence${l.evidence_count === 1 ? '' : 's'}. Click to read them.`;
           }}
           linkHoverPrecision={6}
           onRenderFramePre={drawHulls}
@@ -434,11 +443,9 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
       {empty && (
         <div className="absolute inset-0 flex items-center justify-center p-8">
           <div className="max-w-sm text-center">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-              <Waypoints className="h-7 w-7 text-brand-600" />
-            </div>
-            <h3 className="text-base font-semibold text-slate-800">No knowledge graph yet</h3>
-            <div className="mt-1 text-sm text-slate-500">{emptyHint}</div>
+            <Waypoints className="mx-auto mb-3 h-8 w-8 text-ink-faint" strokeWidth={1.4} />
+            <h3 className="text-base font-semibold text-ink">No knowledge graph yet</h3>
+            <div className="mt-1 text-sm text-ink-muted">{emptyHint}</div>
           </div>
         </div>
       )}
@@ -484,6 +491,9 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
               {' · '}{graph!.documents.length} docs
               {graph!.truncated ? ' (top-ranked shown)' : ''}
             </span>
+            <IconButton title="How to read this graph" active={guide && !selection} onClick={() => (guide ? closeGuide() : setGuide(true))}>
+              <CircleHelp className="h-4 w-4" />
+            </IconButton>
             <IconButton title="Toggle labels" active={showLabels} onClick={() => setShowLabels((v) => !v)}>
               <Tag className="h-4 w-4" />
             </IconButton>
@@ -501,8 +511,49 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
               </IconButton>
             )}
           </div>
+          {guide && !selection && <GraphGuide onClose={closeGuide} />}
         </>
       )}
+    </div>
+  );
+}
+
+/** "How to read this graph" in plain words, for people who have never seen one. */
+function GraphGuide({ onClose }: { onClose: () => void }) {
+  const rows: [React.ReactNode, string, string][] = [
+    [<span key="d" className="block h-3.5 w-3.5 rounded-full bg-brand-600 ring-2 ring-white" />, 'A dot is a thing', 'A person, company, place, law or number Paheli found. Bigger dots are mentioned more.'],
+    [<span key="c" className="block h-3 w-3 rotate-45 bg-[#2a78d6]" />, 'A diamond is an idea', 'A concept or theme rather than a named thing.'],
+    [<svg key="l" viewBox="0 0 28 10" className="h-3 w-7"><line x1="1" y1="5" x2="20" y2="5" stroke="#64748b" strokeWidth="2" /><polygon points="27,5 19,1 19,9" fill="#64748b" /></svg>,
+      'A line is a fact', 'Read it in the arrow’s direction, e.g. “Meridian Grid → closed → Harbor Coal Plant”. Click it to see the sentence.'],
+    [<span key="t" className="block h-3.5 w-6 rounded-full bg-brand-600/20" />, 'A coloured area is a topic', 'Things that are discussed together. Click a topic name to focus on it.'],
+    [<svg key="p" viewBox="0 0 14 18" className="h-4 w-3"><rect x="1" y="1" width="12" height="16" fill="#fff" stroke="#64748b" strokeWidth="1.3" /><path d="M4 6h6M4 9h6M4 12h6" stroke="#64748b" strokeWidth="0.9" /></svg>,
+      'A page is a source document', 'The file the facts came from. Its dotted lines point to the things it mentions.'],
+    [<svg key="x" viewBox="0 0 28 10" className="h-3 w-7"><line x1="1" y1="5" x2="27" y2="5" stroke="#64748b" strokeWidth="2" strokeDasharray="4 3" /></svg>,
+      'A dashed line links two topics', 'A fact that bridges different subjects.'],
+    [<svg key="p" viewBox="0 0 28 10" className="h-3 w-7"><line x1="1" y1="5" x2="27" y2="5" stroke="#0f172a" strokeWidth="3" /><circle cx="18" cy="5" r="3" fill="#f59e0b" /></svg>,
+      'A moving path is an answer', 'After you ask a question, the chain of facts behind the answer lights up.'],
+  ];
+  return (
+    <div className="absolute right-3 top-14 z-20 w-[340px] max-w-[calc(100%-1.5rem)] animate-scale-in rounded-xl border border-line bg-white/95 p-4 shadow-pop backdrop-blur" role="dialog" aria-label="How to read this graph">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-[14px] font-semibold text-ink">How to read this graph</h3>
+          <p className="mt-0.5 text-[12.5px] text-ink-muted">It’s a map of what your documents say is connected to what.</p>
+        </div>
+        <button onClick={onClose} className="rounded-md p-1 text-ink-muted hover:bg-canvas hover:text-ink" aria-label="Close the guide"><X className="h-4 w-4" /></button>
+      </div>
+      <ul className="mt-3 space-y-2.5">
+        {rows.map(([icon, title, body]) => (
+          <li key={title} className="flex gap-3">
+            <span className="mt-1 flex w-7 shrink-0 justify-center">{icon}</span>
+            <span className="min-w-0 text-[12.5px] leading-snug text-ink-muted"><b className="font-semibold text-ink">{title}.</b> {body}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 border-t border-line pt-3 text-[12px] text-ink-muted">Scroll to zoom, drag to move, click anything for details.</p>
+      <button onClick={() => { onClose(); openGraphExplainer(); }} className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-brand-700 hover:underline">
+        <PlayCircle className="h-4 w-4" /> Watch the step-by-step explainer
+      </button>
     </div>
   );
 }
