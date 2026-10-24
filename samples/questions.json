@@ -1,0 +1,55 @@
+{
+  "description": "Demo questions for the bundled sample corpus (5 fictional documents: 4 TXT + 1 PDF). The corpus is fictional on purpose, so answers can only come from the documents.",
+  "questions": [
+    {
+      "category": "thematic",
+      "question": "What are the main themes across these documents?",
+      "expect": "Routes to thematic retrieval; lists the discovered topic communities (research, batteries, grid & regulation, public health) with cited summaries; highlights the communities."
+    },
+    {
+      "category": "factual",
+      "question": "Who founded Voltaic Systems?",
+      "expect": "Ravi Menon, cited to the Voltaic Systems brief and the Aurora profile; highlights the 'founded' edge."
+    },
+    {
+      "category": "factual",
+      "question": "Where is Ferrite Labs based?",
+      "expect": "Kestrel Bay, cited to the Voltaic Systems brief."
+    },
+    {
+      "category": "factual",
+      "question": "Who regulates Meridian Grid?",
+      "expect": "The Coastal Energy Commission, supported by the PDF annual report and the policy brief."
+    },
+    {
+      "category": "multi_hop",
+      "question": "How is the Clean Horizon Act connected to childhood asthma?",
+      "expect": "Clean Horizon Act → requires closure of → Harbor Coal Plant → contributes to → fine particulate pollution → linked to → childhood asthma; spans the PDF report, the health study and two topic communities."
+    },
+    {
+      "category": "multi_hop",
+      "question": "How is Dr. Lena Park connected to Voltaic Systems?",
+      "expect": "Lena Park → leads → Aurora Institute ← worked at ← Ravi Menon → founded → Voltaic Systems (each hop quoted)."
+    },
+    {
+      "category": "comparison",
+      "question": "Compare Aurora Institute and Voltaic Systems.",
+      "expect": "Entity comparison: relations and passages for each, shared neighbours, topic membership."
+    },
+    {
+      "category": "comparison",
+      "question": "Compare the Voltaic Systems brief with the Meridian Grid annual report.",
+      "expect": "Document comparison: per-document passages and relations, shared and document-specific entities."
+    },
+    {
+      "category": "insufficient_evidence",
+      "question": "What is Voltaic Systems' current stock price?",
+      "expect": "Insufficient evidence: the documents never mention a stock price, so no answer is fabricated."
+    },
+    {
+      "category": "insufficient_evidence",
+      "question": "Who won the 2022 FIFA World Cup?",
+      "expect": "Insufficient evidence: out of scope for the uploaded documents."
+    }
+  ]
+}

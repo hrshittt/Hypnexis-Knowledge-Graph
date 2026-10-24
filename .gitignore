@@ -38,6 +38,10 @@ data/memory_store/
 data/sessions.db
 logs/
 
+# Knowledge-base runtime data (uploads, SQLite graph, Chroma index)
+data/kb/
+.pytest_cache/
+
 # Phase 2 source material (large, not needed in Space)
 phase2txt/
 instructions.txt

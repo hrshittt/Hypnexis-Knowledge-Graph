@@ -21,6 +21,7 @@ from sentence_transformers import SentenceTransformer, CrossEncoder
 from rank_bm25 import BM25Okapi
 import chromadb
 
+from backend.core.ranking import sigmoid, rrf, jaccard_sim, mmr
 from backend.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -51,13 +52,11 @@ COLLECTION_MAP = {
 import json as _json
 
 
-def _sigmoid(x: float) -> float:
-    """Normalise CrossEncoder raw logit to (0, 1). BUG FIX for negative confidence."""
-    return 1.0 / (1.0 + math.exp(-x))
-
-
-def _rrf(rank: int, k: int = 60) -> float:
-    return 1.0 / (k + rank)
+# Ranking primitives live in backend/core/ranking.py (shared with the KB retriever).
+_sigmoid     = sigmoid
+_rrf         = rrf
+_jaccard_sim = jaccard_sim
+_mmr         = mmr
 
 
 def _recency_score(metadata: dict, half_life_days: float = 365.0) -> float:
@@ -78,52 +77,6 @@ def _recency_score(metadata: dict, half_life_days: float = 365.0) -> float:
         except (ValueError, TypeError):
             continue
     return 0.5  # unparseable date — neutral
-
-
-def _jaccard_sim(text_a: str, text_b: str) -> float:
-    """Fast word-overlap Jaccard similarity for MMR diversity measure."""
-    words_a = set(text_a.lower().split())
-    words_b = set(text_b.lower().split())
-    if not words_a or not words_b:
-        return 0.0
-    return len(words_a & words_b) / len(words_a | words_b)
-
-
-def _mmr(
-    candidates: List[Dict[str, Any]],
-    top_k: int = 12,         # Increased: more diverse chunks kept (was 4)
-    lambda_param: float = 0.75,
-) -> List[Dict[str, Any]]:
-    """
-    Maximal Marginal Relevance — balances relevance vs diversity.
-    lambda=1.0  → pure relevance (no diversity, default CrossEncoder behavior)
-    lambda=0.75 → mostly relevance but filters near-duplicates
-    lambda=0.0  → pure diversity
-
-    Uses Jaccard word-overlap as cheap diversity proxy (no extra embeddings needed).
-    """
-    if len(candidates) <= top_k:
-        return candidates
-
-    selected: List[Dict[str, Any]] = []
-    remaining = list(candidates)
-
-    while len(selected) < top_k and remaining:
-        if not selected:
-            # Seed with the highest confidence doc
-            best = max(remaining, key=lambda d: d["confidence"])
-        else:
-            best, best_score = None, -float("inf")
-            for doc in remaining:
-                rel = doc["confidence"]
-                max_sim = max(_jaccard_sim(doc["content"], s["content"]) for s in selected)
-                score = lambda_param * rel - (1 - lambda_param) * max_sim
-                if score > best_score:
-                    best_score, best = score, doc
-        selected.append(best)
-        remaining.remove(best)
-
-    return selected
 
 
 # ═════════════════════════════════════════════════════════════════════════════

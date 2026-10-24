@@ -6,7 +6,8 @@ import { PostHogProvider } from 'posthog-js/react'
 import App from './App.tsx'
 import './index.css'
 
-if (typeof window !== 'undefined') {
+// Analytics are optional: only initialise when a key is configured.
+if (typeof window !== 'undefined' && import.meta.env.VITE_POSTHOG_KEY) {
   posthog.init(import.meta.env.VITE_POSTHOG_KEY, {
     api_host: import.meta.env.VITE_POSTHOG_HOST || 'https://us.i.posthog.com',
     person_profiles: 'identified_only',

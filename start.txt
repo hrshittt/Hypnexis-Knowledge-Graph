@@ -1,6 +1,12 @@
-backend
+backend (from the repo root)
 .venv\Scripts\python.exe -m uvicorn backend.main:app --reload --port 8000
 
-
 frontend
-npm run dev 
+cd frontend
+npm run dev
+
+tests
+.venv\Scripts\python.exe -m pytest
+
+load the demo corpus without the UI
+.venv\Scripts\python.exe -m backend.kb.cli load-samples

@@ -36,9 +36,6 @@ import numpy as np
 
 load_dotenv()
 
-# ─── Groq client for chunk classification ────────────────────────────────────
-from groq import Groq as _GroqClient
-
 # ─── Paths ────────────────────────────────────────────────────────────────────
 ROOT        = Path(__file__).parent
 DATA_DIR    = ROOT / "data"
@@ -290,22 +287,22 @@ class ParentChildSplitter:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# CHUNK CLASSIFIER  (calls Groq llama-3.1-8b-instant)
+# CHUNK CLASSIFIER  (calls Gemini flash-lite)
 # ═════════════════════════════════════════════════════════════════════════════
 
 from backend.core.prompt import CHUNK_CLASSIFIER_PROMPT
 
 MULTI_LABEL_THRESHOLD = 0.45  # write to a collection if score >= this
-from backend.utils.groq_rotator import get_pool
+from backend.utils.gemini_client import get_pool
 
 class ChunkClassifier:
     """
     Multi-label classifier: returns probability scores {fact, style, reasoning}.
     A chunk can belong to multiple collections simultaneously.
-    Uses llama-3.1-8b-instant (cheap + fast). Results cached in-memory per run.
-    Now uses GroqKeyPool for rate-limit resilience and limits concurrency.
+    Uses Gemini flash-lite (cheap + fast). Results cached in-memory per run.
+    GeminiClient retries on rate limits; concurrency is capped by a semaphore.
     """
-    MODEL = "llama-3.1-8b-instant"
+    MODEL = "gemini-3.5-flash-lite"
 
     def __init__(self):
         self._pool = get_pool()

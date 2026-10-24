@@ -1,0 +1,420 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ForceGraph2D, { type ForceGraphMethods, type LinkObject, type NodeObject } from 'react-force-graph-2d';
+import { Eraser, Maximize2, Search, Tag, Waypoints } from 'lucide-react';
+import type { GraphEdge, GraphNode, GraphPayload, Selection } from '../../types/kb';
+import {
+  HL_EDGE, NO_COMMUNITY, PATH_COLOR, PATH_PARTICLE, colorForIndex, convexHull, rgba,
+} from '../../lib/graphColors';
+
+export interface HighlightSets {
+  nodes: Set<string>;
+  edges: Set<string>;
+  pathEdges: Set<string>;
+  communities: Set<string>;
+}
+
+type N = NodeObject<GraphNode>;
+type L = LinkObject<GraphNode, GraphEdge>;
+
+interface Props {
+  graph: GraphPayload | null;
+  highlight: HighlightSets | null;
+  selection: Selection;
+  focusToken: number;
+  onSelect: (s: Selection) => void;
+  onClearHighlight: () => void;
+  emptyHint?: React.ReactNode;
+}
+
+const nodeRadius = (n: GraphNode) => Math.min(13, 3.5 + Math.sqrt(n.degree + 0.5 * n.mentions) * 1.6);
+const endId = (e: unknown) => (typeof e === 'object' && e !== null ? (e as N).id as string : (e as string));
+
+export default function GraphView({ graph, highlight, selection, focusToken, onSelect, onClearHighlight, emptyHint }: Props) {
+  const fgRef = useRef<ForceGraphMethods<N, L>>();
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: 600, h: 500 });
+  const [hoverNode, setHoverNode] = useState<string | null>(null);
+  const [hoverLink, setHoverLink] = useState<string | null>(null);
+  const [showLabels, setShowLabels] = useState(true);
+  const [query, setQuery] = useState('');
+  const positions = useRef(new Map<string, { x: number; y: number }>());
+  const fitted = useRef(false);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setSize({ w: Math.max(200, Math.floor(width)), h: Math.max(200, Math.floor(height)) });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const topicIndex = useMemo(() => {
+    const m = new Map<string, { color: string; label: string }>();
+    graph?.topics.forEach((t) => m.set(t.id, { color: colorForIndex(t.color_index), label: t.label }));
+    return m;
+  }, [graph]);
+
+  // Rebuild graph data only when the payload changes; keep previous positions so the layout doesn't jump.
+  const data = useMemo(() => {
+    if (!graph) return { nodes: [] as N[], links: [] as L[] };
+    const nodes: N[] = graph.nodes.map((n) => {
+      const p = positions.current.get(n.id);
+      return p ? { ...n, x: p.x, y: p.y } : { ...n };
+    });
+    const pairCount = new Map<string, number>();
+    const pairKey = (e: GraphEdge) => [e.source, e.target].sort().join('|');
+    graph.edges.forEach((e) => pairCount.set(pairKey(e), (pairCount.get(pairKey(e)) ?? 0) + 1));
+    const seen = new Map<string, number>();
+    const links: L[] = graph.edges.map((e) => {
+      const k = pairKey(e);
+      const n = pairCount.get(k) ?? 1;
+      const i = seen.get(k) ?? 0;
+      seen.set(k, i + 1);
+      // spread parallel edges; flip sign for reversed direction so curves don't overlap
+      const sign = e.source < e.target ? 1 : -1;
+      return { ...e, curvature: n > 1 ? sign * (i - (n - 1) / 2) * 0.6 : 0 };
+    });
+    return { nodes, links };
+  }, [graph]);
+
+  const nodeById = useMemo(() => new Map(data.nodes.map((n) => [n.id as string, n])), [data]);
+
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    fg.d3Force('charge')?.strength?.(-150);
+    fg.d3Force('link')?.distance?.(60);
+  }, [data]);
+
+  const fitHighlight = useCallback(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    if (highlight && highlight.nodes.size > 0 && highlight.nodes.size <= 2) {
+      const pts = Array.from(highlight.nodes).map((id) => nodeById.get(id)).filter((n): n is N => n?.x !== undefined);
+      if (pts.length) {
+        fg.centerAt(pts.reduce((s, n) => s + (n.x ?? 0), 0) / pts.length, pts.reduce((s, n) => s + (n.y ?? 0), 0) / pts.length, 600);
+        fg.zoom(2.2, 600);
+      }
+    } else if (highlight && highlight.nodes.size > 0) {
+      fg.zoomToFit(700, 80, (n) => highlight.nodes.has(n.id as string));
+    } else if (highlight && highlight.communities.size > 0) {
+      fg.zoomToFit(700, 60, (n) => !!n.community && highlight.communities.has(n.community));
+    } else {
+      fg.zoomToFit(600, 50);
+    }
+  }, [highlight, nodeById]);
+
+  useEffect(() => {
+    if (focusToken === 0) return;
+    const t = setTimeout(fitHighlight, 350);
+    return () => clearTimeout(t);
+  }, [focusToken, fitHighlight]);
+
+  useEffect(() => {
+    if (selection?.kind !== 'entity') return;
+    const n = nodeById.get(selection.id);
+    const fg = fgRef.current;
+    if (!fg || n?.x === undefined || n.y === undefined) return;
+    fg.centerAt(n.x, n.y, 500);
+    const k = fg.zoom();
+    if (k < 1.2 || k > 4) fg.zoom(2, 500);
+  }, [selection, nodeById]);
+
+  const selectedNode = selection?.kind === 'entity' ? selection.id : null;
+  const selectedEdge = selection?.kind === 'relation' ? selection.id : null;
+
+  const drawNode = useCallback((node: N, ctx: CanvasRenderingContext2D, scale: number) => {
+    if (node.x === undefined || node.y === undefined) return;
+    positions.current.set(node.id as string, { x: node.x, y: node.y });
+    const id = node.id as string;
+    const r = nodeRadius(node);
+    const color = node.community ? topicIndex.get(node.community)?.color ?? NO_COMMUNITY : NO_COMMUNITY;
+    const isHl = highlight?.nodes.has(id) ?? false;
+    const inComm = !!node.community && (highlight?.communities.has(node.community) ?? false);
+    const alpha = !highlight ? 1 : isHl ? 1 : inComm ? 0.35 : 0.1;
+    const selected = id === selectedNode;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    if (node.type === 'Concept') {
+      ctx.moveTo(node.x, node.y - r * 1.15);
+      ctx.lineTo(node.x + r * 1.15, node.y);
+      ctx.lineTo(node.x, node.y + r * 1.15);
+      ctx.lineTo(node.x - r * 1.15, node.y);
+      ctx.closePath();
+    } else {
+      ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
+    }
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = 1.2 / scale;
+    ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+    if (isHl && highlight) {
+      ctx.lineWidth = 3 / scale;
+      ctx.strokeStyle = PATH_PARTICLE;
+      ctx.stroke();
+    }
+    if (selected) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, r + 3.5 / scale, 0, 2 * Math.PI);
+      ctx.lineWidth = 2.5 / scale;
+      ctx.strokeStyle = PATH_COLOR;
+      ctx.stroke();
+    }
+    const showLabel = selected || isHl || hoverNode === id ||
+      (showLabels && (!highlight || inComm) && (scale > 1.35 || (node.degree >= 4 && scale > 0.75)));
+    if (showLabel) {
+      const fs = (isHl || selected ? 12.5 : 11) / scale;
+      ctx.font = `${isHl || selected ? 600 : 500} ${fs}px Inter, ui-sans-serif, system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.lineWidth = 3.5 / scale;
+      ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+      ctx.strokeText(node.name, node.x, node.y + r + 2 / scale);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText(node.name, node.x, node.y + r + 2 / scale);
+    }
+    ctx.restore();
+  }, [highlight, hoverNode, selectedNode, showLabels, topicIndex]);
+
+  const paintPointer = useCallback((node: N, color: string, ctx: CanvasRenderingContext2D) => {
+    if (node.x === undefined || node.y === undefined) return;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, nodeRadius(node) + 2.5, 0, 2 * Math.PI);
+    ctx.fill();
+  }, []);
+
+  const edgeState = useCallback((l: L) => {
+    const id = l.id as string;
+    return {
+      path: highlight?.pathEdges.has(id) ?? false,
+      hl: (highlight?.edges.has(id) ?? false) || id === selectedEdge,
+      hover: id === hoverLink,
+    };
+  }, [highlight, selectedEdge, hoverLink]);
+
+  const linkColor = useCallback((l: L) => {
+    const s = edgeState(l);
+    if (s.path) return PATH_COLOR;
+    if (s.hl || s.hover) return HL_EDGE;
+    return highlight ? 'rgba(148,163,184,0.14)' : 'rgba(100,116,139,0.42)';
+  }, [edgeState, highlight]);
+
+  const linkWidth = useCallback((l: L) => {
+    const s = edgeState(l);
+    if (s.path) return 3.4;
+    if (s.hl || s.hover) return 2.2;
+    return 0.6 + 0.35 * Math.min(l.evidence_count ?? 1, 4);
+  }, [edgeState]);
+
+  const drawLinkLabel = useCallback((l: L, ctx: CanvasRenderingContext2D, scale: number) => {
+    const s = edgeState(l);
+    if (!(s.path || s.hl || s.hover || (showLabels && !highlight && scale > 2.4))) return;
+    const a = l.source as N;
+    const b = l.target as N;
+    if (typeof a !== 'object' || typeof b !== 'object' || a.x === undefined || b.x === undefined) return;
+    // quadratic Bézier midpoint for curved (parallel) edges, straight midpoint otherwise
+    const cp = (l as { __controlPoints?: number[] }).__controlPoints;
+    const x = cp ? 0.25 * a.x + 0.5 * cp[0] + 0.25 * b.x : (a.x + b.x) / 2;
+    const y = cp ? 0.25 * (a.y ?? 0) + 0.5 * cp[1] + 0.25 * (b.y ?? 0) : ((a.y ?? 0) + (b.y ?? 0)) / 2;
+    const fs = 10 / scale;
+    ctx.save();
+    ctx.font = `${s.path ? 600 : 500} ${fs}px Inter, ui-sans-serif, system-ui, sans-serif`;
+    const w = ctx.measureText(l.predicate).width;
+    ctx.fillStyle = s.path ? 'rgba(15,23,42,0.92)' : 'rgba(255,255,255,0.92)';
+    const pad = 2.5 / scale;
+    ctx.fillRect(x - w / 2 - pad, y - fs / 2 - pad, w + 2 * pad, fs + 2 * pad);
+    ctx.fillStyle = s.path ? '#ffffff' : '#334155';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(l.predicate, x, y);
+    ctx.restore();
+  }, [edgeState, showLabels, highlight]);
+
+  const drawHulls = useCallback((ctx: CanvasRenderingContext2D, scale: number) => {
+    const groups = new Map<string, { x: number; y: number }[]>();
+    for (const n of data.nodes) {
+      if (!n.community || n.x === undefined || n.y === undefined) continue;
+      const g = groups.get(n.community) ?? [];
+      g.push({ x: n.x, y: n.y });
+      groups.set(n.community, g);
+    }
+    groups.forEach((pts, cid) => {
+      const t = topicIndex.get(cid);
+      if (!t) return;
+      const active = highlight?.communities.has(cid) ?? false;
+      const alpha = !highlight ? 0.08 : active ? 0.15 : 0.03;
+      const pad = 18;
+      ctx.save();
+      ctx.fillStyle = rgba(t.color, alpha);
+      ctx.strokeStyle = rgba(t.color, alpha);
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.lineWidth = pad * 2;
+      const hull = convexHull(pts);
+      ctx.beginPath();
+      hull.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+      if (hull.length === 1) ctx.lineTo(hull[0].x + 0.01, hull[0].y);
+      ctx.closePath();
+      ctx.stroke();
+      if (hull.length >= 3) ctx.fill();
+      if (scale < 3.5) {
+        const minY = Math.min(...pts.map((p) => p.y));
+        const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+        ctx.font = `700 ${12.5 / scale}px Inter, ui-sans-serif, system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = rgba(t.color, !highlight || active ? 0.95 : 0.3);
+        ctx.fillText(t.label, cx, minY - pad - 2 / scale);
+      }
+      ctx.restore();
+    });
+  }, [data, highlight, topicIndex]);
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return data.nodes.filter((n) => n.name.toLowerCase().includes(q)).slice(0, 7);
+  }, [query, data]);
+
+  const empty = !graph || graph.nodes.length === 0;
+
+  return (
+    <div ref={wrapRef} className="relative h-full w-full overflow-hidden bg-[radial-gradient(circle_at_1px_1px,#e2e8f0_1px,transparent_0)] [background-size:22px_22px]">
+      {!empty && (
+        <ForceGraph2D<GraphNode, GraphEdge>
+          ref={fgRef}
+          width={size.w}
+          height={size.h}
+          graphData={data}
+          nodeId="id"
+          nodeLabel={(n) => `${n.name} · ${n.type} · ${n.degree} relations`}
+          nodeCanvasObject={drawNode}
+          nodePointerAreaPaint={paintPointer}
+          linkColor={linkColor}
+          linkWidth={linkWidth}
+          linkCurvature="curvature"
+          linkLineDash={(l) => (l.cross_topic && !edgeState(l).path ? [4, 3] : null)}
+          linkDirectionalArrowLength={4}
+          linkDirectionalArrowRelPos={0.92}
+          linkDirectionalParticles={(l) => (edgeState(l).path ? 3 : 0)}
+          linkDirectionalParticleWidth={3.5}
+          linkDirectionalParticleColor={() => PATH_PARTICLE}
+          linkDirectionalParticleSpeed={0.006}
+          linkCanvasObjectMode={() => 'after'}
+          linkCanvasObject={drawLinkLabel}
+          linkLabel={(l) => {
+            const a = nodeById.get(endId(l.source));
+            const b = nodeById.get(endId(l.target));
+            return `${a?.name ?? ''} — ${l.predicate} → ${b?.name ?? ''} (${l.evidence_count} evidence)`;
+          }}
+          linkHoverPrecision={6}
+          onRenderFramePre={drawHulls}
+          onNodeClick={(n) => onSelect({ kind: 'entity', id: n.id as string })}
+          onLinkClick={(l) => onSelect({ kind: 'relation', id: l.id as string })}
+          onNodeHover={(n) => setHoverNode(n ? (n.id as string) : null)}
+          onLinkHover={(l) => setHoverLink(l ? (l.id as string) : null)}
+          onBackgroundClick={() => onSelect(null)}
+          cooldownTicks={160}
+          d3VelocityDecay={0.32}
+          onEngineStop={() => {
+            if (!fitted.current) {
+              fitted.current = true;
+              fgRef.current?.zoomToFit(500, 50);
+            }
+          }}
+          minZoom={0.2}
+          maxZoom={8}
+        />
+      )}
+
+      {empty && (
+        <div className="absolute inset-0 flex items-center justify-center p-8">
+          <div className="max-w-sm text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+              <Waypoints className="h-7 w-7 text-brand-600" />
+            </div>
+            <h3 className="text-base font-semibold text-slate-800">No knowledge graph yet</h3>
+            <div className="mt-1 text-sm text-slate-500">{emptyHint}</div>
+          </div>
+        </div>
+      )}
+
+      {!empty && (
+        <>
+          <div className="absolute left-3 top-3 z-10 w-64">
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white/95 px-2.5 py-1.5 shadow-sm">
+              <Search className="h-4 w-4 text-slate-400" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && matches[0]) {
+                    onSelect({ kind: 'entity', id: matches[0].id as string });
+                    setQuery('');
+                  }
+                }}
+                placeholder="Find an entity…"
+                className="w-full bg-transparent text-sm text-slate-800 placeholder-slate-400 focus:outline-none"
+                aria-label="Find an entity in the graph"
+              />
+            </div>
+            {matches.length > 0 && (
+              <div className="mt-1 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-md">
+                {matches.map((n) => (
+                  <button
+                    key={n.id as string}
+                    onClick={() => { onSelect({ kind: 'entity', id: n.id as string }); setQuery(''); }}
+                    className="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm hover:bg-slate-50"
+                  >
+                    <span className="truncate text-slate-800">{n.name}</span>
+                    <span className="ml-2 shrink-0 text-[11px] text-slate-400">{n.type}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5">
+            <span className="hidden rounded-md bg-white/90 px-2 py-1 text-[11px] text-slate-500 ring-1 ring-slate-200 sm:inline">
+              {graph!.nodes.length} nodes · {graph!.edges.length} edges · {graph!.topics.length} topics
+              {graph!.truncated ? ' (top-ranked shown)' : ''}
+            </span>
+            <IconButton title="Toggle labels" active={showLabels} onClick={() => setShowLabels((v) => !v)}>
+              <Tag className="h-4 w-4" />
+            </IconButton>
+            <IconButton title="Fit to view" onClick={fitHighlight}>
+              <Maximize2 className="h-4 w-4" />
+            </IconButton>
+            {highlight && (
+              <IconButton title="Clear answer highlight" onClick={onClearHighlight}>
+                <Eraser className="h-4 w-4" />
+              </IconButton>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function IconButton({ children, title, onClick, active }: { children: React.ReactNode; title: string; onClick: () => void; active?: boolean }) {
+  return (
+    <button
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      className={`flex h-8 w-8 items-center justify-center rounded-md border shadow-sm transition-colors ${
+        active ? 'border-brand-500 bg-brand-50 text-brand-600' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}

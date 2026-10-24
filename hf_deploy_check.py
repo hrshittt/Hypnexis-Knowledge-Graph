@@ -246,6 +246,8 @@ import_checks = [
     ("loguru", "loguru"),
     ("numpy", "numpy"),
     ("dotenv", "python-dotenv"),
+    ("networkx", "networkx"),
+    ("pypdf", "pypdf"),
 ]
 
 for module, pkg_name in import_checks:

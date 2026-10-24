@@ -1,7 +1,7 @@
 [project]
 name = "ceo-digital-twin"
-version = "2.1.0"
-description = "Agentic RAG CEO Digital Twin — Govind Agrawal / Anaxee Digital Runners"
+version = "3.0.0"
+description = "Interactive Knowledge Base (topic-augmented knowledge graph builder) + agentic RAG CEO Digital Twin"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -21,5 +21,15 @@ dependencies = [
     "python-multipart>=0.0.9",
     "pydantic>=2.7.0",
     "slowapi>=0.1.9",
+    "networkx>=3.2",
+    "pypdf>=4.0",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+neo4j = ["neo4j>=5.20"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q -p no:cacheprovider"
 

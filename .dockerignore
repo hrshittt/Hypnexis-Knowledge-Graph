@@ -28,6 +28,10 @@ Thumbs.db
 # Logs (regenerated at runtime)
 logs/
 
+# Local knowledge-base data (uploads, graph DB, vector index) and tests
+data/kb/
+tests/
+
 # Dev files
 *.md
 phase2txt/
