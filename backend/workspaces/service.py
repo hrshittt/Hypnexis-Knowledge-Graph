@@ -151,7 +151,7 @@ class WorkspaceService:
         user = self.db.one("SELECT user_id FROM users WHERE email=?", ((email or "").strip().lower(),))
         if user is None:
             raise WorkspaceError(404, "user_not_found",
-                                 "No Hypnexis account uses that email. Ask them to register first.")
+                                 "No Paheli account uses that email. Ask them to register first.")
         if self.role_of(ws_id, user["user_id"]):
             raise WorkspaceError(409, "already_member", "That person is already a member of this workspace.")
         self.db.execute("INSERT INTO workspace_members VALUES (?,?,?,?)", (ws_id, user["user_id"], role, time.time()))

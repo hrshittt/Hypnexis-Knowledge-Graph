@@ -1,13 +1,14 @@
 """
 FastAPI Main Application
 ========================
-Hypnexis — knowledge graph intelligence platform. One server hosts:
+Paheli — knowledge graph intelligence platform. One server hosts:
   - Shared demo knowledge graph (Topic-Augmented Knowledge Graph Builder)  — /api/kb/*
   - Accounts and sessions                                                  — /api/auth/*
   - Workspaces with isolated knowledge bases                               — /api/workspaces/*
       corporate / research / legal analyses, placement intelligence
   - Cross-workspace dashboard, documents, search, activity, saved analyses — /api/overview, /api/search, …
   - CEO Digital Twin (original agentic RAG chat)                           — /api/chat/*, /api/voice/*
+  - Call Paheli (OmniDimension outbound voice call)                        — /api/call/*
 
 Run: uvicorn backend.main:app --reload --port 8000
 
@@ -27,6 +28,7 @@ from slowapi.errors import RateLimitExceeded
 
 from backend import services
 from backend.api.auth import router as auth_router
+from backend.api.call import router as call_router
 from backend.api.chat import router as chat_router
 from backend.api.intel import router as intel_router
 from backend.api.kb import router as kb_router
@@ -154,7 +156,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Hypnexis — Knowledge Graph Intelligence Platform",
+    title="Paheli — Knowledge Graph Intelligence Platform",
     description="Evidence-backed answers and interactive knowledge graphs for corporate, research, legal and "
                 "placement intelligence (plus the original agentic RAG CEO twin).",
     version="4.0.0",
@@ -224,6 +226,7 @@ app.include_router(intel_router)
 app.include_router(platform_router)
 app.include_router(chat_router)
 app.include_router(voice_router)
+app.include_router(call_router)
 
 
 # ─── Deep Health Check ───────────────────────────────────────────────────────
@@ -277,7 +280,7 @@ async def health():
 
     return {
         "status": status,
-        "service": "Hypnexis — Knowledge Graph Intelligence Platform",
+        "service": "Paheli — Knowledge Graph Intelligence Platform",
         "version": "4.0.0",
         "checks": checks,
         "graph_store": graph_store,
@@ -288,7 +291,7 @@ async def health():
 @app.get("/")
 async def root():
     return {
-        "message": "Hypnexis API",
+        "message": "Paheli API",
         "docs": "/docs",
         "health": "/health",
         "kb": {

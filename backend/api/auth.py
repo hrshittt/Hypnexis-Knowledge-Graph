@@ -101,7 +101,7 @@ async def register(request: Request, response: Response, body: RegisterBody):
     token, csrf, expires = auth.create_session(user["user_id"], remember=False,
                                                user_agent=request.headers.get("user-agent", ""))
     set_session_cookie(response, request, token, expires, remember=False)
-    ws.log(user["user_id"], None, "account", "Created your Hypnexis account")
+    ws.log(user["user_id"], None, "account", "Created your Paheli account")
     return _session_payload(request, user, csrf, expires, False)
 
 
