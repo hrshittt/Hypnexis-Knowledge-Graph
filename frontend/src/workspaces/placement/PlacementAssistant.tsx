@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { ArrowRight, Calculator, Loader2, MessageSquareText, Send, Sigma } from 'lucide-react';
+import { ArrowRight, AudioLines, Calculator, Loader2, MessageSquareText, Send, Sigma } from 'lucide-react';
 import { placementApi } from '../../api/platform';
 import { errorMessage } from '../../lib/http';
 import type { PlacementAnswer } from '../../types/platform';
@@ -8,6 +8,7 @@ import { Card } from '../../components/ui/Card';
 import { Notice } from '../../components/ui/Feedback';
 import { Table, Td, Th } from '../../components/ui/Table';
 import { SaveButton } from '../../components/workspace/SaveButton';
+import VoiceMode from '../../components/voice/VoiceMode';
 
 const STARTERS = [
   'Compare PPO conversion rates across the last three completed academic years.',
@@ -26,13 +27,15 @@ export function PlacementAssistant({ wsId, onTab, initial }: { wsId: string; onT
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [voice, setVoice] = useState(false);
   const next = useRef(1);
   const bottom = useRef<HTMLDivElement>(null);
   const asked = useRef(false);
 
-  const ask = async (q: string) => {
+  /** Resolves with the answer text (for voice mode), or null when nothing was answered. */
+  const ask = async (q: string): Promise<string | null> => {
     const question = q.trim();
-    if (!question || busy) return;
+    if (!question || busy) return null;
     const id = next.current++;
     setTurns((t) => [...t, { id, question }]);
     setInput('');
@@ -40,8 +43,10 @@ export function PlacementAssistant({ wsId, onTab, initial }: { wsId: string; onT
     try {
       const answer = await placementApi.ask(wsId, question);
       setTurns((t) => t.map((x) => (x.id === id ? { ...x, answer } : x)));
+      return answer.answer;
     } catch (e) {
       setTurns((t) => t.map((x) => (x.id === id ? { ...x, error: errorMessage(e) } : x)));
+      return null;
     } finally {
       setBusy(false);
     }
@@ -56,7 +61,7 @@ export function PlacementAssistant({ wsId, onTab, initial }: { wsId: string; onT
         <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
           {!turns.length && (
             <div className="mx-auto max-w-lg py-6 text-center">
-              <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-700"><MessageSquareText className="h-5 w-5" /></div>
+              <MessageSquareText className="mx-auto mb-2.5 h-6 w-6 text-ink-faint" strokeWidth={1.5} />
               <h2 className="text-[15px] font-semibold text-ink">Ask about your placement records</h2>
               <p className="mt-1 text-[13.5px] text-ink-muted">
                 Every number is calculated from your imported records, with its definition and calculation. Questions outside the supported analyses get a list of what can be answered.
@@ -79,10 +84,15 @@ export function PlacementAssistant({ wsId, onTab, initial }: { wsId: string; onT
           <label htmlFor="pl-q" className="sr-only">Question</label>
           <input id="pl-q" value={input} onChange={(e) => setInput(e.target.value)} placeholder="e.g. Which companies returned this year?" maxLength={1000}
             className="h-11 min-w-0 flex-1 rounded-xl border border-line-strong bg-canvas px-3.5 text-[14px] focus:border-brand-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-600/15" />
+          <button type="button" onClick={() => setVoice(true)} title="Voice mode: talk and hear the answer" aria-label="Open voice mode"
+            className="flex h-11 w-11 items-center justify-center rounded-xl border border-line-strong bg-white text-ink-soft transition-colors hover:border-brand-600 hover:text-brand-700">
+            <AudioLines className="h-4 w-4" />
+          </button>
           <button type="submit" disabled={!input.trim() || busy} className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40" aria-label="Ask">
             <Send className="h-4 w-4" />
           </button>
         </form>
+        <VoiceMode open={voice} onClose={() => setVoice(false)} ask={ask} context="your placement records" suggestions={STARTERS} />
       </Card>
       <aside>
         <Card>

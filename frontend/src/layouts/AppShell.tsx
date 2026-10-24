@@ -2,11 +2,11 @@ import { Suspense, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bell, ChevronRight, CircleHelp, FileText, History, LayoutDashboard, Loader2, LogOut, Menu as MenuIcon, PanelLeftClose,
-  PanelLeftOpen, Plus, Search, Settings, Waypoints, X,
+  PanelLeftOpen, Plus, ScanText, Search, Settings, Waypoints, X,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { usePreference } from '../lib/hooks';
-import { TYPE_INFO, WORKSPACE_TYPES } from '../lib/workspaceTypes';
+import { OTHERS_INFO, TYPE_INFO, WORKSPACE_TYPES } from '../lib/workspaceTypes';
 import { initials, timeAgo } from '../lib/format';
 import { platformApi } from '../api/platform';
 import type { Activity, ProcessingJob, WorkspaceType } from '../types/platform';
@@ -14,14 +14,20 @@ import { Logo, LogoMark } from '../components/brand/Logo';
 import { Menu, Popover } from '../components/ui/Overlay';
 import { PageLoader, Spinner } from '../components/ui/Feedback';
 import { useToast } from '../lib/toast';
+import CallPaheli from '../components/CallPaheli';
+import ExplainerHost from '../components/explain/ExplainerHost';
 
-interface NavItem { to: string; label: string; icon: React.ComponentType<{ className?: string }>; end?: boolean; type?: WorkspaceType }
+interface NavItem { to: string; label: string; icon: React.ComponentType<{ className?: string }>; end?: boolean; type?: WorkspaceType; tag?: string }
 
 const PRIMARY: NavItem[] = [{ to: '/app', label: 'Overview', icon: LayoutDashboard, end: true }];
-const WORKSPACES: NavItem[] = WORKSPACE_TYPES.map((t) => ({ to: `/app/${t.type}`, label: t.type === 'legal' ? 'Legal & Policy' : t.label, icon: t.icon, type: t.type }));
+const WORKSPACES: NavItem[] = [
+  ...WORKSPACE_TYPES.map((t) => ({ to: `/app/${t.type}`, label: t.type === 'legal' ? 'Legal & Policy' : t.label, icon: t.icon, type: t.type })),
+  { to: '/app/others', label: OTHERS_INFO.label, icon: OTHERS_INFO.icon },
+];
 const TOOLS: NavItem[] = [
   { to: '/app/graph', label: 'Knowledge Graph', icon: Waypoints },
   { to: '/app/documents', label: 'Documents', icon: FileText },
+  { to: '/app/ocr', label: 'Scan & OCR', icon: ScanText, tag: 'New' },
   { to: '/app/search', label: 'Search', icon: Search },
   { to: '/app/activity', label: 'Recent Activity', icon: History },
   { to: '/app/settings', label: 'Settings', icon: Settings },
@@ -35,9 +41,9 @@ export default function AppShell() {
   useEffect(() => { setMobileOpen(false); }, [loc.pathname]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-canvas">
+    <div className="flex h-screen overflow-hidden bg-white">
       <a href="#main" className="sr-only z-[90] rounded-md bg-white px-3 py-2 text-sm focus:not-sr-only focus:fixed focus:left-3 focus:top-3">Skip to content</a>
-      <aside className={`hidden shrink-0 border-r border-line bg-white transition-[width] duration-200 lg:flex lg:flex-col ${collapsed ? 'w-[68px]' : 'w-[248px]'}`}>
+      <aside className={`hidden shrink-0 border-r border-line bg-canvas/70 transition-[width] duration-300 ease-out lg:flex lg:flex-col ${collapsed ? 'w-[68px]' : 'w-[248px]'}`}>
         <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
       </aside>
       {mobileOpen && (
@@ -58,6 +64,7 @@ export default function AppShell() {
             <Outlet />
           </Suspense>
         </main>
+        <ExplainerHost />
       </div>
     </div>
   );
@@ -83,16 +90,16 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle?: () =>
       <NavLink key={it.to} to={it.to} end={it.end} title={collapsed ? it.label : undefined}
         className={({ isActive }) => {
           const on = typed ? activeType === it.type : isActive;
-          return `group relative flex items-center gap-3 rounded-lg px-2.5 py-2 text-[13.5px] transition-colors ${
-            on ? 'bg-brand-50 font-medium text-brand-800' : 'text-ink-soft hover:bg-ink/[0.04] hover:text-ink'} ${collapsed ? 'justify-center' : ''}`;
+          return `group relative flex items-center gap-3 rounded-lg px-2.5 py-2 text-[13.5px] transition-all duration-200 ${
+            on ? 'bg-white font-medium text-ink shadow-card ring-1 ring-line' : 'text-ink-soft hover:bg-ink/[0.04] hover:text-ink'} ${collapsed ? 'justify-center' : ''}`;
         }}>
         {({ isActive }) => {
           const on = typed ? activeType === it.type : isActive;
           return (
             <>
-              {on && <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-r bg-brand-600" aria-hidden />}
-              <it.icon className={`h-[18px] w-[18px] shrink-0 ${on ? 'text-brand-700' : 'text-ink-muted group-hover:text-ink-soft'}`} />
+              <it.icon className={`h-[18px] w-[18px] shrink-0 transition-colors ${on ? 'text-brand-700' : 'text-ink-muted group-hover:text-ink-soft'}`} />
               {!collapsed && <span className="min-w-0 flex-1 truncate">{it.label}</span>}
+              {!collapsed && it.tag && <span className="rounded-full bg-spark-soft px-1.5 text-[10px] font-semibold uppercase tracking-wide text-warn-ink">{it.tag}</span>}
               {!collapsed && typed && (count(it.type!) === 0
                 ? <Plus className="h-3.5 w-3.5 text-ink-faint" aria-label="Not set up yet" />
                 : count(it.type!) > 1 ? <span className="num text-[11px] text-ink-muted">{count(it.type!)}</span> : null)}
@@ -105,8 +112,8 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle?: () =>
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className={`flex h-14 shrink-0 items-center border-b border-line ${collapsed ? 'justify-center px-2' : 'px-4'}`}>
-        {collapsed ? <Link to="/app" aria-label="Hypnexis overview"><LogoMark /></Link> : <Logo to="/app" />}
+      <div className={`flex h-14 shrink-0 items-center ${collapsed ? 'justify-center px-2' : 'px-4'}`}>
+        {collapsed ? <Link to="/app" aria-label="Paheli overview"><LogoMark /></Link> : <Logo to="/app" />}
       </div>
       <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 py-4" aria-label="Main">
         <div className="space-y-0.5">{PRIMARY.map(link)}</div>
@@ -133,7 +140,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle?: () =>
 
 const SECTION: Record<string, string> = {
   graph: 'Knowledge Graph', documents: 'Documents', search: 'Search', activity: 'Recent Activity', saved: 'Saved analysis',
-  settings: 'Settings', help: 'Help & documentation',
+  settings: 'Settings', help: 'Help & documentation', others: 'Others', ocr: 'Scan & OCR',
 };
 
 function Breadcrumbs() {
@@ -154,7 +161,7 @@ function Breadcrumbs() {
   return (
     <nav aria-label="Breadcrumb" className="min-w-0">
       <ol className="flex min-w-0 items-center gap-1 text-[13.5px]">
-        <li className="hidden sm:block"><Link to="/app" className="text-ink-muted hover:text-ink">Hypnexis</Link></li>
+        <li className="hidden sm:block"><Link to="/app" className="text-ink-muted hover:text-ink">Paheli</Link></li>
         {crumbs.map((c, i) => (
           <li key={i} className="flex min-w-0 items-center gap-1">
             <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-ink-faint ${i === 0 ? 'hidden sm:block' : ''}`} />
@@ -174,7 +181,7 @@ function TopBar({ onMenu }: { onMenu: () => void }) {
   const [q, setQ] = useState('');
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-white px-3 sm:px-5">
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-white/90 px-3 backdrop-blur sm:px-6">
       <button onClick={onMenu} className="rounded-lg p-2 text-ink-muted hover:bg-canvas lg:hidden" aria-label="Open navigation">
         <MenuIcon className="h-5 w-5" />
       </button>
@@ -189,6 +196,7 @@ function TopBar({ onMenu }: { onMenu: () => void }) {
         </label>
       </form>
       <Link to="/app/search" className="rounded-lg p-2 text-ink-muted hover:bg-canvas md:hidden" aria-label="Search"><Search className="h-5 w-5" /></Link>
+      <CallPaheli />
       <Notifications />
       <Link to="/app/help" className="hidden rounded-lg p-2 text-ink-muted hover:bg-canvas hover:text-ink sm:block" aria-label="Help and documentation" title="Help & documentation">
         <CircleHelp className="h-5 w-5" />

@@ -17,9 +17,10 @@ export function useKBChat(onAnswer: (turnId: string, a: Answer) => void, kbApi: 
   const abortRef = useRef<AbortController | null>(null);
   const pending = turns.some((t) => t.pending);
 
-  const ask = useCallback(async (question: string) => {
+  /** Resolves with the answer (null when cancelled or failed) so voice mode can read it aloud. */
+  const ask = useCallback(async (question: string): Promise<Answer | null> => {
     const q = question.trim();
-    if (!q) return;
+    if (!q) return null;
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -31,9 +32,11 @@ export function useKBChat(onAnswer: (turnId: string, a: Answer) => void, kbApi: 
       const answer = await kbApi.queryStream(q, (s) => update((t) => ({ stages: [...t.stages, s] })), ctrl.signal, docIds);
       update({ answer, pending: false });
       onAnswer(id, answer);
+      return answer;
     } catch (e) {
       const err = e as Error;
       update({ pending: false, error: err.name === 'AbortError' ? 'Cancelled' : err.message });
+      return null;
     }
   }, [onAnswer, kbApi, docIds]);
 

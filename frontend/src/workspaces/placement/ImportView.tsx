@@ -164,7 +164,7 @@ export function ImportView({ wsId, canImport, onImported }: { wsId: string; canI
           </Card>
 
           <Card>
-            <CardHeader title="Column mapping" description="Match each Hypnexis field to a column in your file. Required fields must be mapped or given a default."
+            <CardHeader title="Column mapping" description="Match each Paheli field to a column in your file. Required fields must be mapped or given a default."
               actions={<Button variant="secondary" size="sm" icon={<RotateCcw className="h-3.5 w-3.5" />} loading={busy === 'preview'} onClick={revalidate}>Re-validate</Button>} />
             <Table caption="Column mapping">
               <thead><tr><Th>Field</Th><Th>Column in your file</Th><Th className="hidden lg:table-cell">Default when unmapped</Th><Th className="hidden md:table-cell">About</Th></tr></thead>

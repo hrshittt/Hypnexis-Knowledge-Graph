@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth';
 import { ApiError } from '../lib/http';
 import { useAsync, useDocumentTitle } from '../lib/hooks';
 import { authApi } from '../api/platform';
-import { WORKSPACE_TYPES, isWorkspaceType } from '../lib/workspaceTypes';
+import { OTHERS_INFO, WORKSPACE_TYPES, isWorkspaceType } from '../lib/workspaceTypes';
 import type { WorkspaceType } from '../types/platform';
 import { Button } from '../components/ui/Button';
 import { Checkbox, Field, Input, PasswordInput } from '../components/ui/Form';
@@ -42,7 +42,8 @@ export default function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [wtype, setWtype] = useState<WorkspaceType | null>(isWorkspaceType(preset) ? preset : null);
+  // 'others' is interface-only: the account is created without a workspace and lands on the Others page.
+  const [wtype, setWtype] = useState<WorkspaceType | 'others' | null>(isWorkspaceType(preset) ? preset : preset === 'others' ? 'others' : null);
   const [terms, setTerms] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -66,9 +67,10 @@ export default function Register() {
     if (Object.keys(errs).length) return;
     setBusy(true);
     try {
-      const p = await register({ name: name.trim(), email: email.trim(), password, workspace_type: wtype, accept_terms: terms });
-      const ws = p.workspaces.find((w) => w.type === wtype) ?? p.workspaces[0];
-      nav(ws ? `/app/w/${ws.id}?welcome=1` : '/app', { replace: true });
+      const others = wtype === 'others';
+      const p = await register({ name: name.trim(), email: email.trim(), password, workspace_type: others ? null : wtype, accept_terms: terms });
+      const ws = others ? undefined : p.workspaces.find((w) => w.type === wtype) ?? p.workspaces[0];
+      nav(others ? '/app/others' : ws ? `/app/w/${ws.id}?welcome=1` : '/app', { replace: true });
     } catch (err) {
       const ae = err as ApiError;
       setFormError(ae.message);
@@ -79,7 +81,7 @@ export default function Register() {
   };
 
   return (
-    <AuthLayout title="Create your Hypnexis account" subtitle="Set up a private workspace in under a minute."
+    <AuthLayout title="Create your Paheli account" subtitle="Set up a private workspace in under a minute."
       footer={<>Already have an account? <Link to="/login" className="font-medium text-brand-700 hover:underline">Sign in</Link></>}>
       {closed && <Notice tone="warn" className="mb-4">Registration is closed on this deployment. Ask your administrator for an account.</Notice>}
       {formError && <Notice tone="danger" className="mb-4">{formError}</Notice>}
@@ -121,10 +123,11 @@ export default function Register() {
         <fieldset>
           <legend className="mb-1.5 text-[13px] font-medium text-ink">Start with<span className="ml-0.5 text-danger" aria-hidden>*</span></legend>
           <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-describedby={errors.workspace_type ? 'ws-err' : undefined}>
-            {WORKSPACE_TYPES.map((t) => {
-              const on = wtype === t.type;
+            {[...WORKSPACE_TYPES.map((t) => ({ key: t.type as WorkspaceType | 'others', label: t.label, audience: t.audience, icon: t.icon })),
+              { key: 'others' as const, label: OTHERS_INFO.label, audience: 'Hospitals, schools, government, NGOs and more', icon: OTHERS_INFO.icon }].map((t) => {
+              const on = wtype === t.key;
               return (
-                <button key={t.type} type="button" role="radio" aria-checked={on} onClick={() => setWtype(t.type)}
+                <button key={t.key} type="button" role="radio" aria-checked={on} onClick={() => setWtype(t.key)}
                   className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition-colors ${
                     on ? 'border-brand-600 bg-brand-50 ring-1 ring-brand-600' : 'border-line-strong bg-white hover:border-ink-faint'}`}>
                   <t.icon className={`mt-0.5 h-4 w-4 shrink-0 ${on ? 'text-brand-700' : 'text-ink-muted'}`} />

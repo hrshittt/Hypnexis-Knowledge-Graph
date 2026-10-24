@@ -25,8 +25,8 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
     if (bootError) {
       return (
         <FullPage>
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-danger-soft text-danger"><ServerCrash className="h-6 w-6" /></div>
-          <h1 className="text-lg font-semibold text-ink">Can’t reach the Hypnexis API</h1>
+          <ServerCrash className="h-7 w-7 text-danger" strokeWidth={1.5} />
+          <h1 className="text-lg font-semibold text-ink">Can’t reach the Paheli API</h1>
           <p className="max-w-lg break-words text-[13.5px] text-ink-muted">{bootError}</p>
           <Button onClick={() => refresh()}>Try again</Button>
         </FullPage>

@@ -129,7 +129,7 @@ export function CompaniesView({ companies, years, ongoing, ctcUnit }: { companie
                 <tbody>{years.map((y) => <tr key={y}><Td>{y}{ongoing.includes(y) ? ' (ongoing)' : ''}</Td><Td align="right">{open.offers_by_year[y] ?? (open.years.includes(y) ? 0 : '—')}</Td></tr>)}</tbody>
               </Table>
             </div>
-            <p className="text-[12px] text-ink-muted">All figures come from your imported records. Hypnexis doesn’t add outside data about companies.</p>
+            <p className="text-[12px] text-ink-muted">All figures come from your imported records. Paheli doesn’t add outside data about companies.</p>
           </div>
         )}
       </Drawer>

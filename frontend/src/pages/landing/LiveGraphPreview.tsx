@@ -21,14 +21,14 @@ export default function LiveGraphPreview() {
       <div className="relative flex h-full w-full items-center justify-center bg-canvas">
         <GraphIllustration className="h-[85%] w-[85%]" />
         <span className="absolute bottom-3 left-3 rounded-md bg-white/90 px-2 py-1 text-[11.5px] text-ink-muted ring-1 ring-line">
-          Illustration — the shared demo corpus has no documents yet
+          Illustration: the shared demo graph has no documents yet
         </span>
       </div>
     );
   }
   return (
     <div className="relative h-full w-full">
-      <GraphView graph={graph} highlight={null} selection={null} focusToken={0} onSelect={() => {}} onClearHighlight={() => {}} />
+      <GraphView graph={graph} highlight={null} selection={null} focusToken={0} onSelect={() => {}} onClearHighlight={() => {}} autoGuide={false} />
       <TopicLegend topics={graph.topics} activeIds={new Set()} onSelect={() => {}} />
     </div>
   );

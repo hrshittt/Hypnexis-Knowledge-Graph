@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, FileText, FileUp, Pencil, RotateCcw, Sparkles, Trash2, X } from 'lucide-react';
+import { AlertTriangle, FileText, FileUp, Pencil, RotateCcw, ScanText, Sparkles, Trash2, X } from 'lucide-react';
 import { workspaceKbApi } from '../../api/kb';
 import { workspacesApi } from '../../api/platform';
 import { errorMessage } from '../../lib/http';
@@ -14,7 +14,8 @@ import { Badge, SampleBadge } from '../ui/Badge';
 import { Button, IconButton } from '../ui/Button';
 import { Select, SearchInput } from '../ui/Form';
 import { EmptyState, ErrorState, Notice, Skeleton } from '../ui/Feedback';
-import { ConfirmDialog, Drawer } from '../ui/Overlay';
+import { ConfirmDialog, Drawer, Modal } from '../ui/Overlay';
+import OcrScanner from '../ocr/OcrScanner';
 import { Table, Td, Th } from '../ui/Table';
 import { DocStatus } from './DocStatus';
 import { META_LABEL, MetaEditor, type MetaField } from './MetaEditor';
@@ -43,6 +44,7 @@ export function WorkspaceDocuments({ ws, metaFields, allowVerified, onChanged, i
   const [deleting, setDeleting] = useState<WorkspaceDocument | null>(null);
   const [details, setDetails] = useState<WorkspaceDocument | null>(null);
   const [drag, setDrag] = useState(false);
+  const [ocr, setOcr] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const wasBusy = useRef(false);
 
@@ -137,7 +139,7 @@ export function WorkspaceDocuments({ ws, metaFields, allowVerified, onChanged, i
           onDrop={(e) => { e.preventDefault(); setDrag(false); upload(Array.from(e.dataTransfer.files)); }}
           className={`flex flex-wrap items-center gap-4 rounded-xl border-2 border-dashed px-5 py-4 transition-colors ${
             drag ? 'border-brand-600 bg-brand-50' : 'border-line-strong bg-white'}`}>
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-50 text-brand-700"><FileUp className="h-5 w-5" /></span>
+          <FileUp className="h-6 w-6 shrink-0 text-ink-faint" strokeWidth={1.5} />
           <div className="min-w-0 flex-1">
             <p className="text-[14px] font-medium text-ink">Drop documents here or browse</p>
             <p className="text-[12.5px] text-ink-muted">
@@ -147,6 +149,7 @@ export function WorkspaceDocuments({ ws, metaFields, allowVerified, onChanged, i
           </div>
           <div className="flex gap-2">
             <Button variant="secondary" icon={<Sparkles className="h-4 w-4" />} onClick={loadSamples} disabled={busy}>Load sample documents</Button>
+            <Button variant="secondary" icon={<ScanText className="h-4 w-4" />} onClick={() => setOcr(true)}>Scan (OCR)</Button>
             <Button icon={<FileUp className="h-4 w-4" />} onClick={() => input.current?.click()} loading={busy}>Upload</Button>
           </div>
           <input ref={input} type="file" multiple className="hidden" accept={limits?.types.join(',') ?? '.pdf,.txt,.md'}
@@ -240,6 +243,10 @@ export function WorkspaceDocuments({ ws, metaFields, allowVerified, onChanged, i
           )}
       </Card>
 
+      <Modal open={ocr} onClose={() => setOcr(false)} size="lg" title="Scan a photo or scanned PDF"
+        description="Paheli reads the page in your browser. Check the text, then add it to this workspace.">
+        <OcrScanner compact onAdd={(f) => upload([f])} addLabel={`Add to ${ws.name}`} />
+      </Modal>
       <MetaEditor open={!!editing} onClose={() => setEditing(null)} workspaceId={ws.id} doc={editing} fields={metaFields}
         allowVerified={allowVerified} onSaved={() => { docs.reload(); onChanged?.(); }} />
       <ConfirmDialog open={!!deleting} title="Delete this document?" confirmLabel="Delete document" busy={busy}

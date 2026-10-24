@@ -118,7 +118,7 @@ function ResearchFlow({ wsId, api, sources, sourcesLoading, canWrite, onAddSourc
       <div className="space-y-5">
         <Card padded>
           <h2 className="text-[16px] font-semibold text-ink">What laws, rules and policies may apply to my situation?</h2>
-          <p className="mt-1 text-[13.5px] text-ink-muted">Describe what your organisation does. Hypnexis searches the sources in this workspace and explains which provisions may apply, and why.</p>
+          <p className="mt-1 text-[13.5px] text-ink-muted">Describe what your organisation does. Paheli searches the sources in this workspace and explains which provisions may apply, and why.</p>
           <form className="mt-4 space-y-3" onSubmit={(e) => { e.preventDefault(); run(); }}>
             <Field label="Your situation" error={error}>
               {({ id, describedBy, invalid }) => (
@@ -144,7 +144,7 @@ function ResearchFlow({ wsId, api, sources, sourcesLoading, canWrite, onAddSourc
             </div>
           </form>
           {sources && sources.jurisdictions.length > 0 && (
-            <p className="mt-3 text-[12px] text-ink-muted">Coverage is limited to your sources: {sources.jurisdictions.join(', ')}. Hypnexis does not cover every jurisdiction or law.</p>
+            <p className="mt-3 text-[12px] text-ink-muted">Coverage is limited to your sources: {sources.jurisdictions.join(', ')}. Paheli does not cover every jurisdiction or law.</p>
           )}
           {examples.length > 0 && !result && (
             <div className="mt-4 flex flex-wrap gap-1.5">

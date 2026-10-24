@@ -1,6 +1,6 @@
 Coal Plant Retirement and Childhood Asthma Admissions in Port Calder: A Difference-in-Differences Study
 
-Fictional sample document for the Hypnexis demo. The authors, data and findings are invented.
+Fictional sample document for the Paheli demo. The authors, data and findings are invented.
 
 Amina Diallo, Samuel Okafor and Lena Park
 Harbor Medical Center; Aurora Institute

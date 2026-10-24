@@ -14,7 +14,7 @@ Applicability analysis
   3. provisions are retrieved with the workspace's hybrid search plus term overlap
   4. results are grouped per law: why it may apply (its scope provisions + matched facts),
      obligations, conditions and exceptions, penalties, sources
-  5. every law is "potentially applicable". Hypnexis never confirms applicability: thresholds
+  5. every law is "potentially applicable". Paheli never confirms applicability: thresholds
      and conditions found in the text are turned into facts the user must confirm, and
      metadata such as effective dates is shown only when a workspace member entered it.
 """
@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from backend.intel.common import DocText, Sentence
 from backend.kb.text_utils import content_terms
 
-DISCLAIMER = ("Hypnexis provides legal information and research assistance based only on the sources in this "
+DISCLAIMER = ("Paheli provides legal information and research assistance based only on the sources in this "
               "workspace. It is not legal advice and does not confirm that a law applies to you. Check the current "
               "official text and consult a qualified professional before acting.")
 
@@ -286,7 +286,7 @@ def analyse_question(kb, docs: Dict[str, DocText], meta: Dict[str, Dict[str, Any
                       "the relevant laws — upload the official texts that cover your situation.")
     return {"question": question, "facts": facts, "jurisdiction": used_j, "clarifications": clarifications,
             "laws": laws, "sources_considered": len(scope_ids), "disclaimer": DISCLAIMER,
-            "status_note": "Every law is marked as potentially applicable. Applicability depends on facts Hypnexis "
+            "status_note": "Every law is marked as potentially applicable. Applicability depends on facts Paheli "
                            "cannot verify — confirm the listed conditions and thresholds before relying on it."}
 
 

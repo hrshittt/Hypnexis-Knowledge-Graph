@@ -21,7 +21,7 @@ const META_HINT: Partial<Record<MetaField, string>> = {
   doc_kind: 'For example Annual report, Statute, Regulation, Journal article.',
   jurisdiction: 'Legal research filters sources by this value.',
   effective_date: 'Only enter a date you have verified in the official text.',
-  source_url: 'Must start with http:// or https://. Hypnexis never invents links.',
+  source_url: 'Must start with http:// or https://. Paheli never invents links.',
 };
 
 interface Props {

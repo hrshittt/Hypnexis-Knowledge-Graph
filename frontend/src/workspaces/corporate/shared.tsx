@@ -52,7 +52,7 @@ export function EvidenceDrawer({ evidence, onClose, api }: { evidence: Evidence 
               ))}
             </div>
           </div>
-          <p className="text-[12.5px] text-ink-muted">Calculated by Hypnexis only from inputs that share a currency and period. It is not a figure stated in the documents.</p>
+          <p className="text-[12.5px] text-ink-muted">Calculated by Paheli only from inputs that share a currency and period. It is not a figure stated in the documents.</p>
         </div>
       </Drawer>
     );
@@ -63,7 +63,7 @@ export function EvidenceDrawer({ evidence, onClose, api }: { evidence: Evidence 
       <div className="space-y-5">
         {p.conflict && (
           <Notice tone="danger" title="The documents disagree">
-            Different values were found for the same metric, period and currency. Hypnexis shows each one and does not pick or average them.
+            Different values were found for the same metric, period and currency. Paheli shows each one and does not pick or average them.
           </Notice>
         )}
         <dl className="grid grid-cols-2 gap-4">

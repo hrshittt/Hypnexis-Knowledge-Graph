@@ -50,8 +50,8 @@ export default function Login() {
   };
 
   return (
-    <AuthLayout title="Sign in to Hypnexis" subtitle="Welcome back. Pick up where you left off."
-      footer={<>New to Hypnexis? <Link to={`/register${params.get('next') ? `?next=${encodeURIComponent(next)}` : ''}`} className="font-medium text-brand-700 hover:underline">Create an account</Link></>}>
+    <AuthLayout title="Sign in to Paheli" subtitle="Welcome back. Pick up where you left off."
+      footer={<>New to Paheli? <Link to={`/register${params.get('next') ? `?next=${encodeURIComponent(next)}` : ''}`} className="font-medium text-brand-700 hover:underline">Create an account</Link></>}>
       {params.get('expired') && !formError && (
         <Notice tone="warn" className="mb-4">Your session expired. Sign in again to continue.</Notice>
       )}

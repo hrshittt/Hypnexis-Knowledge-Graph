@@ -1,4 +1,7 @@
-import { BookOpenText, Building2, GraduationCap, Scale, type LucideIcon } from 'lucide-react';
+import {
+  BookOpenText, Briefcase, Building, Building2, GraduationCap, HandCoins, HeartHandshake, Hospital, Landmark, Newspaper, Scale,
+  School, Shapes, type LucideIcon,
+} from 'lucide-react';
 import type { Role, WorkspaceType } from '../types/platform';
 
 export interface WorkspaceTypeInfo {
@@ -40,6 +43,38 @@ export const WORKSPACE_TYPES: WorkspaceTypeInfo[] = [
 ];
 
 export const TYPE_INFO = Object.fromEntries(WORKSPACE_TYPES.map((t) => [t.type, t])) as Record<WorkspaceType, WorkspaceTypeInfo>;
+
+/**
+ * "Others": every team outside the four dedicated workspaces. Interface only — the server has no workspace of this
+ * type, so it routes to /app/others, which explains what works today (graph, OCR, voice, calls) for any documents.
+ */
+export const OTHERS_INFO = {
+  key: 'others' as const,
+  label: 'Others',
+  short: 'Others',
+  icon: Shapes,
+  tagline: 'Hospitals, schools, government offices, banks, NGOs — any team that runs on documents.',
+  audience: 'Any team with documents to understand',
+};
+
+export interface Industry {
+  name: string;
+  icon: LucideIcon;
+  documents: string;
+  question: string;
+}
+
+/** Domains the Others page and the landing page describe. Example questions are illustrative, not sample data. */
+export const OTHER_INDUSTRIES: Industry[] = [
+  { name: 'Healthcare & hospitals', icon: Hospital, documents: 'Clinical guidelines, discharge summaries, policy circulars', question: 'Which guideline covers post-operative follow-up visits?' },
+  { name: 'Schools & universities', icon: School, documents: 'Academic regulations, circulars, accreditation reports', question: 'What does the attendance rule say about medical leave?' },
+  { name: 'Government & public sector', icon: Landmark, documents: 'Notifications, tenders, scheme guidelines, RTI replies', question: 'Who is eligible under the new scheme guideline?' },
+  { name: 'Banking & insurance', icon: HandCoins, documents: 'Policy wordings, circulars, audit and KYC reports', question: 'Which claims are excluded under this policy wording?' },
+  { name: 'Real estate & construction', icon: Building, documents: 'Contracts, approvals, inspection and progress reports', question: 'Which approvals are still pending for Tower B?' },
+  { name: 'Media & journalism', icon: Newspaper, documents: 'Archives, transcripts, filings and press releases', question: 'Who has been linked to this company across our archive?' },
+  { name: 'NGOs & non-profits', icon: HeartHandshake, documents: 'Grant agreements, field reports, impact assessments', question: 'Which grants require a report before March?' },
+  { name: 'HR & recruitment', icon: Briefcase, documents: 'Handbooks, policies, job descriptions, survey results', question: 'How many days of parental leave does the handbook allow?' },
+];
 
 export const isWorkspaceType = (v: string | undefined): v is WorkspaceType => !!v && v in TYPE_INFO;
 

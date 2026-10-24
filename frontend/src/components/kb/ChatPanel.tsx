@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { MessageSquareText, Send, Square, Trash2 } from 'lucide-react';
+import { AudioLines, MessageSquareText, Send, Square, Trash2 } from 'lucide-react';
+import VoiceMode from '../voice/VoiceMode';
 import type { ExampleQuestion, Selection } from '../../types/kb';
 import type { ChatTurn } from '../../hooks/useKBChat';
 import AnswerCard from './AnswerCard';
@@ -20,10 +21,14 @@ interface Props {
   onClear: () => void;
   onSelect: (s: Selection) => void;
   onActivate: (turnId: string) => void;
+  /** voice-to-voice: answers a spoken question and resolves with the text to read aloud */
+  onVoiceAsk?: (q: string) => Promise<string | null>;
+  voiceContext?: string;
 }
 
 export default function ChatPanel(p: Props) {
   const [input, setInput] = useState('');
+  const [voice, setVoice] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [p.turns]);
@@ -41,19 +46,22 @@ export default function ChatPanel(p: Props) {
   }, {});
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-slate-50/60">
+    <section className="flex min-h-0 flex-1 flex-col bg-canvas/50">
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
         {p.turns.length === 0 ? (
           <div className="mx-auto max-w-md pt-4 text-center">
-            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
-              <MessageSquareText className="h-5 w-5 text-brand-600" />
-            </div>
-            <h2 className="text-base font-semibold text-slate-800">Ask your documents</h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <MessageSquareText className="mx-auto mb-2.5 h-6 w-6 text-ink-faint" strokeWidth={1.5} />
+            <h2 className="text-base font-semibold text-ink">Ask your documents</h2>
+            <p className="mt-1 text-sm text-ink-muted">
               {p.hasDocuments
-                ? 'Answers cite exact passages and light up the supporting entities, relations and topic communities in the graph.'
+                ? 'Answers quote the exact passages they used and light up the matching dots and lines in the graph.'
                 : 'Upload documents (or load the samples) to build the knowledge graph first.'}
             </p>
+            {p.hasDocuments && p.onVoiceAsk && (
+              <button onClick={() => setVoice(true)} className="mt-4 inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-[13px] font-medium text-white transition-transform hover:scale-[1.02]">
+                <AudioLines className="h-4 w-4" /> Talk to Paheli
+              </button>
+            )}
             {p.hasDocuments && Object.keys(grouped).length > 0 && (
               <div className="mt-5 space-y-3 text-left">
                 {Object.entries(grouped).map(([cat, qs]) => (
@@ -92,6 +100,12 @@ export default function ChatPanel(p: Props) {
             className="max-h-32 min-h-[44px] flex-1 resize-none rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-[14px] text-slate-800 placeholder-slate-400 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/15"
             aria-label="Question"
           />
+          {p.onVoiceAsk && (
+            <button type="button" onClick={() => setVoice(true)} disabled={!p.hasDocuments} title="Voice mode: talk and hear the answer"
+              aria-label="Open voice mode" className="flex h-11 w-11 items-center justify-center rounded-xl border border-line-strong bg-white text-ink-soft transition-colors hover:border-brand-600 hover:text-brand-700 disabled:opacity-40">
+              <AudioLines className="h-4 w-4" />
+            </button>
+          )}
           {p.pending ? (
             <button type="button" onClick={p.onStop} title="Stop" className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 text-red-500 hover:bg-red-50">
               <Square className="h-4 w-4 fill-current" />
@@ -108,6 +122,10 @@ export default function ChatPanel(p: Props) {
           </button>
         )}
       </form>
+      {p.onVoiceAsk && (
+        <VoiceMode open={voice} onClose={() => setVoice(false)} ask={p.onVoiceAsk} context={p.voiceContext}
+          suggestions={p.examples.map((q) => q.question)} />
+      )}
     </section>
   );
 }

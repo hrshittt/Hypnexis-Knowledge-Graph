@@ -4,11 +4,12 @@ import { Button } from './Button';
 type Tone = 'info' | 'warn' | 'danger' | 'success' | 'neutral';
 
 const NOTICE: Record<Tone, { box: string; icon: React.ComponentType<{ className?: string }>; iconClass: string }> = {
-  info: { box: 'border-info/25 bg-info-soft text-info-ink', icon: Info, iconClass: 'text-info' },
-  warn: { box: 'border-warn/30 bg-warn-soft text-warn-ink', icon: AlertTriangle, iconClass: 'text-warn' },
-  danger: { box: 'border-danger/25 bg-danger-soft text-danger-ink', icon: ShieldAlert, iconClass: 'text-danger' },
-  success: { box: 'border-brand-200 bg-brand-50 text-brand-800', icon: CheckCircle2, iconClass: 'text-brand-600' },
-  neutral: { box: 'border-line bg-canvas text-ink-soft', icon: Info, iconClass: 'text-ink-muted' },
+  info: { box: 'rounded-lg bg-info-soft px-3.5 py-2.5 text-info-ink', icon: Info, iconClass: 'text-info' },
+  warn: { box: 'rounded-lg bg-warn-soft px-3.5 py-2.5 text-warn-ink', icon: AlertTriangle, iconClass: 'text-warn' },
+  danger: { box: 'rounded-lg bg-danger-soft px-3.5 py-2.5 text-danger-ink', icon: ShieldAlert, iconClass: 'text-danger' },
+  success: { box: 'rounded-lg bg-brand-50 px-3.5 py-2.5 text-brand-800', icon: CheckCircle2, iconClass: 'text-brand-600' },
+  // neutral notes read as an aside, not a box: a hairline on the left and muted text
+  neutral: { box: 'border-l-2 border-line py-0.5 pl-3 text-ink-muted', icon: Info, iconClass: 'text-ink-faint' },
 };
 
 interface NoticeProps {
@@ -24,7 +25,7 @@ export function Notice({ tone = 'info', title, children, action, className = '',
   const t = NOTICE[tone];
   const Icon = t.icon;
   return (
-    <div className={`flex items-start gap-2.5 rounded-lg border px-3.5 py-2.5 text-[13px] leading-snug ${t.box} ${className}`}
+    <div className={`flex items-start gap-2.5 text-[13px] leading-snug ${t.box} ${className}`}
       role={tone === 'danger' ? 'alert' : undefined}>
       <span className={`mt-px shrink-0 ${t.iconClass}`}>{icon ?? <Icon className="h-4 w-4" />}</span>
       <div className="min-w-0 flex-1">
@@ -48,11 +49,7 @@ interface EmptyStateProps {
 export function EmptyState({ icon, title, children, actions, className = '', compact }: EmptyStateProps) {
   return (
     <div className={`flex flex-col items-center justify-center text-center ${compact ? 'px-4 py-8' : 'px-6 py-14'} ${className}`}>
-      {icon && (
-        <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-700 [&_svg]:h-5 [&_svg]:w-5">
-          {icon}
-        </div>
-      )}
+      {icon && <div className="mb-2.5 text-ink-faint [&_svg]:h-6 [&_svg]:w-6 [&_svg]:stroke-[1.5]">{icon}</div>}
       <h3 className="text-[15px] font-semibold text-ink">{title}</h3>
       {children && <div className="mt-1 max-w-md text-[13.5px] leading-relaxed text-ink-muted">{children}</div>}
       {actions && <div className="mt-4 flex flex-wrap items-center justify-center gap-2">{actions}</div>}
@@ -63,9 +60,7 @@ export function EmptyState({ icon, title, children, actions, className = '', com
 export function ErrorState({ message, onRetry, className = '' }: { message: string; onRetry?: () => void; className?: string }) {
   return (
     <div className={`flex flex-col items-center px-6 py-10 text-center ${className}`} role="alert">
-      <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-danger-soft text-danger">
-        <AlertTriangle className="h-5 w-5" />
-      </div>
+      <AlertTriangle className="mb-2.5 h-6 w-6 stroke-[1.5] text-danger" />
       <h3 className="text-[15px] font-semibold text-ink">Something went wrong</h3>
       <p className="mt-1 max-w-lg break-words text-[13.5px] text-ink-muted">{message}</p>
       {onRetry && <Button variant="secondary" size="sm" className="mt-4" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={onRetry}>Try again</Button>}
@@ -83,13 +78,13 @@ export function Spinner({ label, className = '' }: { label?: string; className?:
 }
 
 export function Skeleton({ className = '' }: { className?: string }) {
-  return <div className={`animate-pulse rounded-md bg-ink/[0.06] ${className}`} aria-hidden />;
+  return <div className={`skeleton-shimmer rounded-md ${className}`} aria-hidden />;
 }
 
 /** A card-shaped placeholder for the first load of a panel. */
 export function SkeletonCard({ lines = 3, className = '' }: { lines?: number; className?: string }) {
   return (
-    <div className={`rounded-xl border border-line bg-white p-5 shadow-card ${className}`} aria-busy="true" aria-label="Loading">
+    <div className={`rounded-xl border border-line bg-white p-5 ${className}`} aria-busy="true" aria-label="Loading">
       <Skeleton className="h-4 w-1/3" />
       <div className="mt-4 space-y-2.5">
         {Array.from({ length: lines }, (_, i) => <Skeleton key={i} className={`h-3 ${i % 3 === 2 ? 'w-2/3' : 'w-full'}`} />)}

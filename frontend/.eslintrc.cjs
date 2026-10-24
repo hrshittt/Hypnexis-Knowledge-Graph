@@ -16,11 +16,16 @@ module.exports = {
   overrides: [
     {
       // These modules deliberately export helpers next to their components: context providers with
-      // their hooks (auth, toast), UI-kit variants, route guards, shared formatters and view helpers.
+      // their hooks (auth, toast), UI-kit variants, route guards, shared formatters, view helpers,
+      // motion hooks and the functions that open app-wide dialogs (call, graph explainer).
       // Fast refresh just falls back to a full reload for them in dev, so the hint is noise here.
       files: [
         'src/lib/*.tsx',
         'src/components/ui/*.tsx',
+        'src/components/CallPaheli.tsx',
+        'src/components/explain/ExplainerHost.tsx',
+        'src/components/motion/Motion.tsx',
+        'src/pages/landing/HeroGraph.tsx',
         'src/components/workspace/MetaEditor.tsx',
         'src/routes/guards.tsx',
         'src/pages/app/ActivityPage.tsx',

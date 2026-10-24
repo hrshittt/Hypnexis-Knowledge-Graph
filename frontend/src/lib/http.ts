@@ -27,7 +27,7 @@ export class ApiError extends Error {
 }
 
 export const UNREACHABLE =
-  'The Hypnexis API is not reachable. Start the backend with: .venv\\Scripts\\python.exe -m uvicorn backend.main:app --reload --port 8000 ' +
+  'The Paheli API is not reachable. Start the backend with: .venv\\Scripts\\python.exe -m uvicorn backend.main:app --reload --port 8000 ' +
   '(the first start loads the models and takes about 30 seconds).';
 
 let csrfToken: string | null = null;

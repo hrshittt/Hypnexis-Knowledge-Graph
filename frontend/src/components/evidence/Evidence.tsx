@@ -64,7 +64,7 @@ function PassageModal({ api, citation, onClose }: { api: KbApi; citation: Citati
 export function BasisBadge({ basis }: { basis: string }) {
   const map: Record<string, [string, string, string]> = {
     reported: ['Reported', 'bg-brand-50 text-brand-700', 'Taken verbatim from a source document.'],
-    calculated: ['Calculated', 'bg-info-soft text-info-ink', 'Computed by Hypnexis from reported figures; the formula and inputs are shown.'],
+    calculated: ['Calculated', 'bg-info-soft text-info-ink', 'Computed by Paheli from reported figures; the formula and inputs are shown.'],
     disclosed: ['Disclosed', 'bg-brand-50 text-brand-700', 'Stated in the documents.'],
     inferred: ['Inferred', 'bg-warn-soft text-warn-ink', 'A rule-based flag derived from the figures, not a statement in the documents.'],
     estimated: ['Estimated', 'bg-warn-soft text-warn-ink', 'An estimate — treat with caution.'],

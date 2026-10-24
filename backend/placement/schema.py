@@ -1,5 +1,5 @@
 """
-Canonical placement schema: the fields Hypnexis stores, the spreadsheet headers that map
+Canonical placement schema: the fields Paheli stores, the spreadsheet headers that map
 to them, and the normalisers that turn free-text cells into consistent values.
 
 Two import kinds
@@ -97,7 +97,7 @@ FIELDS = {"students": STUDENT_FIELDS, "applications": APPLICATION_FIELDS}
 
 # Columns that are never imported, even if someone maps them: names (exact header forms, so
 # "Company Name" is fine), and any header containing a sensitive word as a whole token.
-# Academic scores are excluded too: Hypnexis does not rank or profile students.
+# Academic scores are excluded too: Paheli does not rank or profile students.
 SENSITIVE_EXACT = frozenset({
     "name", "student name", "full name", "first name", "last name", "middle name", "candidate name",
     "name of student", "name of the student", "category", "social category", "reservation category",

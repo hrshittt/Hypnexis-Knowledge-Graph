@@ -1,6 +1,6 @@
 Sodium-Ion Batteries for Grid Storage: A Field Evaluation at the Harbor Storage Facility
 
-Fictional sample document for the Hypnexis demo. The authors, data and findings are invented.
+Fictional sample document for the Paheli demo. The authors, data and findings are invented.
 
 Priya Natarajan and Ravi Menon
 Voltaic Systems; Kestrel University

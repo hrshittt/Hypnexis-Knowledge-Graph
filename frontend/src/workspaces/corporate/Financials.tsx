@@ -52,7 +52,7 @@ export function Financials({ analysis: a, onEvidence }: Props) {
     <div className="space-y-6">
       <Notice tone="info">
         Amounts are in millions of their own currency{currency ? ` (${currency})` : ''}, as written in the documents. Currencies are never combined.
-        Every figure is marked <b>Reported</b> (stated in a document) or <b>Calculated</b> (computed by Hypnexis, with formula); select any value to see its source.
+        Every figure is marked <b>Reported</b> (stated in a document) or <b>Calculated</b> (computed by Paheli, with formula); select any value to see its source.
       </Notice>
       {a.currencies.length > 1 && (
         <Notice tone="warn" title="Several currencies">These documents report in {a.currencies.join(', ')}. Charts plot each figure in its own currency; compare with care.</Notice>

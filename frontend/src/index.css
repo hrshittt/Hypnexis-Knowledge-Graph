@@ -7,7 +7,7 @@
     -webkit-text-size-adjust: 100%;
   }
   body {
-    @apply bg-canvas font-sans text-ink antialiased;
+    @apply bg-white font-sans text-ink antialiased;
     font-feature-settings: 'cv11', 'ss01';
   }
   :focus-visible {
@@ -35,6 +35,39 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* Dotted canvas behind graphs and illustrations. */
+  .dot-grid {
+    background-image: radial-gradient(circle at 1px 1px, rgba(20, 26, 22, 0.09) 1px, transparent 0);
+    background-size: 22px 22px;
+  }
+
+  /* Underline that draws in from the left on hover (nav and inline links). */
+  .link-draw {
+    background-image: linear-gradient(currentColor, currentColor);
+    background-size: 0% 1px;
+    background-position: 0 100%;
+    background-repeat: no-repeat;
+    transition: background-size 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .link-draw:hover,
+  .link-draw:focus-visible {
+    background-size: 100% 1px;
+  }
+
+  /* Children rise in one after another (lists, rows, sections). */
+  .stagger > * {
+    animation: slideUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .stagger > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger > *:nth-child(2) { animation-delay: 50ms; }
+  .stagger > *:nth-child(3) { animation-delay: 100ms; }
+  .stagger > *:nth-child(4) { animation-delay: 150ms; }
+  .stagger > *:nth-child(5) { animation-delay: 200ms; }
+  .stagger > *:nth-child(6) { animation-delay: 250ms; }
+  .stagger > *:nth-child(7) { animation-delay: 300ms; }
+  .stagger > *:nth-child(8) { animation-delay: 350ms; }
+  .stagger > *:nth-child(n + 9) { animation-delay: 400ms; }
+
   /* Markdown Styles */
   .prose-custom p {
     @apply mb-4 leading-relaxed;
@@ -60,6 +93,24 @@
   .prose-custom ul:last-child, .prose-custom ol:last-child {
     @apply mb-0;
   }
+}
+
+/* The light band that sweeps over an image while OCR reads it. */
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(300%); }
+}
+
+/* SVG strokes that draw themselves: set stroke-dasharray/offset to the length, then animate to 0. */
+@keyframes drawLine {
+  to { stroke-dashoffset: 0; }
+}
+
+/* Loading placeholders shimmer instead of blinking. */
+.skeleton-shimmer {
+  background: linear-gradient(90deg, rgba(20, 26, 22, 0.05) 25%, rgba(20, 26, 22, 0.1) 37%, rgba(20, 26, 22, 0.05) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.6s linear infinite;
 }
 
 /* Custom Scrollbar */
