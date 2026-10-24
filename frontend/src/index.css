@@ -2,15 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-600/40 ring-offset-1 ring-offset-white;
+  }
+  ::selection {
+    @apply bg-brand-100 text-ink;
+  }
+  [hidden] {
+    display: none !important;
+  }
+}
+
 @layer utilities {
   .glass-panel {
     @apply bg-white/70 backdrop-blur-md border border-slate-200/60 shadow-[0_8px_30px_rgb(0,0,0,0.04)];
   }
-  
+
   .glass-button {
     @apply bg-white/60 hover:bg-white/90 backdrop-blur-sm border border-slate-200/80 transition-all duration-200;
   }
-  
+
+  /* Numbers that must align in columns (tables, axis ticks). Standalone figures keep proportional digits. */
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+
   /* Markdown Styles */
   .prose-custom p {
     @apply mb-4 leading-relaxed;
@@ -31,7 +55,10 @@
     @apply font-semibold text-slate-900 mt-6 mb-3;
   }
   .prose-custom blockquote {
-    @apply border-l-4 border-blue-500 pl-4 italic text-slate-600 my-4 bg-slate-50/50 py-1;
+    @apply border-l-4 border-brand-600 pl-4 italic text-slate-600 my-4 bg-slate-50/50 py-1;
+  }
+  .prose-custom ul:last-child, .prose-custom ol:last-child {
+    @apply mb-0;
   }
 }
 
@@ -48,4 +75,28 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-slate-400;
+}
+
+/* Below-the-fold landing blocks wait for their entrance animation — except in print, which shows everything. */
+.reveal-pending {
+  opacity: 0;
+}
+@media print {
+  .reveal-pending {
+    opacity: 1 !important;
+  }
+}
+
+/* Respect reduced-motion preferences everywhere (entrance animations, transitions, smooth scroll). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
 }

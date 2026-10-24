@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, FileText, Loader2, Network, Sparkles, X } from 'lucide-react';
-import { kbApi } from '../../api/kb';
+import { kbApi as sharedKbApi, type KbApi } from '../../api/kb';
 import type { ChunkDetail, EntityDetail, GraphPayload, RelationDetail, Selection } from '../../types/kb';
 import { colorForIndex } from '../../lib/graphColors';
 import HighlightedText from './HighlightedText';
@@ -11,9 +11,14 @@ interface Props {
   onSelect: (s: Selection) => void;
   onHighlightNodes: (ids: string[]) => void;
   onClose: () => void;
+  /** which knowledge base to read details from (default: the shared demo corpus) */
+  api?: KbApi;
+  /** 'overlay' floats over the graph (original layout); 'panel' fills a side column */
+  variant?: 'overlay' | 'panel';
 }
 
-export default function Inspector({ selection, graph, onSelect, onHighlightNodes, onClose }: Props) {
+export default function Inspector({ selection, graph, onSelect, onHighlightNodes, onClose, api = sharedKbApi, variant = 'overlay' }: Props) {
+  const kbApi = api;
   const [entity, setEntity] = useState<EntityDetail | null>(null);
   const [relation, setRelation] = useState<RelationDetail | null>(null);
   const [chunk, setChunk] = useState<ChunkDetail | null>(null);
@@ -31,7 +36,7 @@ export default function Inspector({ selection, graph, onSelect, onHighlightNodes
       : kbApi.chunk(selection.source.chunk_id).then((d) => alive && setChunk(d));
     p.catch((e) => alive && setError(e.message)).finally(() => alive && setLoading(false));
     return () => { alive = false; };
-  }, [selection]);
+  }, [selection, kbApi]);
 
   if (!selection) return null;
   const topicColor = (id?: string | null) => {
@@ -40,7 +45,10 @@ export default function Inspector({ selection, graph, onSelect, onHighlightNodes
   };
 
   return (
-    <aside className="absolute right-3 top-14 bottom-3 z-20 flex w-[380px] max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+    <aside className={variant === 'panel'
+      ? 'flex h-full w-full animate-fade-in flex-col overflow-hidden bg-white'
+      : 'absolute right-3 top-14 bottom-3 z-20 flex w-[380px] max-w-[calc(100%-1.5rem)] animate-slide-in-right flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl'}
+      aria-label="Graph inspector">
       <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           {selection.kind === 'entity' ? 'Entity' : selection.kind === 'relation' ? 'Relationship'
@@ -138,13 +146,13 @@ export default function Inspector({ selection, graph, onSelect, onHighlightNodes
           </>
         )}
 
-        {selection.kind === 'topic' && <TopicView id={selection.id} graph={graph} onSelect={onSelect} />}
+        {selection.kind === 'topic' && <TopicView id={selection.id} graph={graph} onSelect={onSelect} api={kbApi} />}
       </div>
     </aside>
   );
 }
 
-function TopicView({ id, graph, onSelect }: { id: string; graph: GraphPayload | null; onSelect: (s: Selection) => void }) {
+function TopicView({ id, graph, onSelect, api }: { id: string; graph: GraphPayload | null; onSelect: (s: Selection) => void; api: KbApi }) {
   const topic = graph?.topics.find((t) => t.id === id);
   const [open, setOpen] = useState<ChunkDetail | null>(null);
   if (!topic) return <p className="text-sm text-slate-500">Topic no longer exists (the graph was rebuilt).</p>;
@@ -170,7 +178,7 @@ function TopicView({ id, graph, onSelect }: { id: string; graph: GraphPayload | 
           if (!m) return <span key={i}>{p}</span>;
           const cid = topic.evidence_chunk_ids[Number(m[1]) - 1];
           return (
-            <button key={i} onClick={() => cid && kbApi.chunk(cid).then(setOpen)}
+            <button key={i} onClick={() => cid && api.chunk(cid).then(setOpen)}
               className="mx-0.5 rounded bg-brand-50 px-1 text-[11px] font-semibold text-brand-600 hover:bg-brand-100">{m[1]}</button>
           );
         })}

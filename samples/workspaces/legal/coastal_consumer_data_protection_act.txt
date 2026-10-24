@@ -1,0 +1,39 @@
+Coastal State Consumer Data Protection Act 2022
+
+Fictional sample document for the Hypnexis demo. The Coastal State and this Act are invented; nothing here describes real law.
+
+Part 1. Preliminary
+
+Section 1. Short title and commencement
+This Act may be cited as the Coastal State Consumer Data Protection Act 2022. It comes into force on 1 January 2023.
+
+Section 2. Definitions
+In this Act, "personal data" means any information relating to an identified or identifiable individual. "Data controller" means a person who determines the purposes and means of processing personal data. "Authority" means the Coastal Data Protection Authority established under Section 9.
+
+Section 3. Application
+This Act applies to any business that collects or processes the personal data of residents of the Coastal State in the course of trade. This Act does not apply to processing carried out by an individual for purely personal or household purposes. A business with annual turnover below $2 million that processes the personal data of fewer than 5,000 residents is exempt from Section 6 and Section 7.
+
+Part 2. Obligations of data controllers
+
+Section 4. Consent
+A data controller shall obtain the consent of the individual before collecting personal data, unless the processing is necessary to perform a contract with that individual. Consent must be specific, informed and capable of being withdrawn at any time.
+
+Section 5. Purpose limitation
+A data controller shall not use personal data for a purpose that is incompatible with the purpose for which it was collected.
+
+Section 6. Security safeguards
+A data controller must implement reasonable security safeguards to protect personal data against unauthorised access, loss or disclosure.
+
+Section 7. Breach notification
+Where a personal data breach is likely to cause harm, the data controller shall notify the Authority within 72 hours of becoming aware of the breach. The data controller shall also inform affected individuals without undue delay.
+
+Section 8. Payment card data
+A business that stores payment card data of customers shall comply with the security requirements of the Coastal Digital Payments Regulation 2023.
+
+Part 3. Enforcement
+
+Section 9. Coastal Data Protection Authority
+The Coastal Data Protection Authority is established to supervise compliance with this Act.
+
+Section 10. Penalties
+A data controller that fails to comply with Section 6 or Section 7 is liable to a penalty of up to $500,000. Repeated violations are punishable by a penalty of up to 4 percent of annual turnover.

@@ -35,7 +35,7 @@ export default function TopicLegend({ topics, activeIds, onSelect }: Props) {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] font-medium text-slate-800">{t.label}</span>
                   <span className="block truncate text-[11px] text-slate-500">
-                    {t.size} entities · {t.keywords.slice(0, 3).join(', ')}
+                    {t.size} entities{t.keywords.length ? ` · ${t.keywords.slice(0, 3).join(', ')}` : ''}
                   </span>
                 </span>
               </button>

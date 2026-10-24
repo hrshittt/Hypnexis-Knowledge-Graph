@@ -1,0 +1,4 @@
+{
+  "description": "Legal & Policy demo set. The Coastal State and its laws are invented; the root policy brief is reused unchanged.",
+  "include": ["../../coastal_energy_policy_brief.txt"]
+}

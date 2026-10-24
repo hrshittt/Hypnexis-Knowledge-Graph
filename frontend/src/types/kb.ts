@@ -17,6 +17,8 @@ export interface GraphNode {
   degree: number;
   mentions: number;
   doc_count: number;
+  /** analysis graphs (corporate / legal / placement) carry the facts behind a node here */
+  detail?: Record<string, unknown>;
 }
 
 export interface GraphEdge {
@@ -28,6 +30,20 @@ export interface GraphEdge {
   doc_count: number;
   cross_topic: boolean;
   methods?: string | null;
+  /** analysis graphs: counts or basis behind the edge, and the source sentences where available */
+  detail?: Record<string, unknown>;
+  evidence?: Citation[];
+}
+
+/** A sentence-level source reference produced by the document analysers. */
+export interface Citation {
+  doc_id: string;
+  filename: string;
+  page: number;
+  sentence: string;
+  chunk_id: string;
+  highlight: [number, number];
+  section?: string | null;
 }
 
 export interface Topic {
@@ -106,6 +122,7 @@ export interface KBStatus {
   neo4j: { enabled: boolean; ok?: boolean; error?: string };
   warnings: string[];
   jobs: Job[];
+  upload?: { max_mb: number; types: string[] };
 }
 
 export interface Source {

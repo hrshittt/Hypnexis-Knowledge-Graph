@@ -24,12 +24,14 @@ interface Props {
   onSelect: (s: Selection) => void;
   onClearHighlight: () => void;
   emptyHint?: React.ReactNode;
+  /** zoom level above which every edge label is drawn (hovered/highlighted edges always are) */
+  edgeLabelMinScale?: number;
 }
 
 const nodeRadius = (n: GraphNode) => Math.min(13, 3.5 + Math.sqrt(n.degree + 0.5 * n.mentions) * 1.6);
 const endId = (e: unknown) => (typeof e === 'object' && e !== null ? (e as N).id as string : (e as string));
 
-export default function GraphView({ graph, highlight, selection, focusToken, onSelect, onClearHighlight, emptyHint }: Props) {
+export default function GraphView({ graph, highlight, selection, focusToken, onSelect, onClearHighlight, emptyHint, edgeLabelMinScale = 2.4 }: Props) {
   const fgRef = useRef<ForceGraphMethods<N, L>>();
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 600, h: 500 });
@@ -215,7 +217,7 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
 
   const drawLinkLabel = useCallback((l: L, ctx: CanvasRenderingContext2D, scale: number) => {
     const s = edgeState(l);
-    if (!(s.path || s.hl || s.hover || (showLabels && !highlight && scale > 2.4))) return;
+    if (!(s.path || s.hl || s.hover || (showLabels && !highlight && scale > edgeLabelMinScale))) return;
     const a = l.source as N;
     const b = l.target as N;
     if (typeof a !== 'object' || typeof b !== 'object' || a.x === undefined || b.x === undefined) return;
@@ -235,7 +237,7 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
     ctx.textBaseline = 'middle';
     ctx.fillText(l.predicate, x, y);
     ctx.restore();
-  }, [edgeState, showLabels, highlight]);
+  }, [edgeState, showLabels, highlight, edgeLabelMinScale]);
 
   const drawHulls = useCallback((ctx: CanvasRenderingContext2D, scale: number) => {
     const groups = new Map<string, { x: number; y: number }[]>();

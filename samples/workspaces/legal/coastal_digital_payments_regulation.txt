@@ -1,0 +1,29 @@
+Coastal Digital Payments Regulation 2023
+
+Fictional sample document for the Hypnexis demo. The Coastal State and this Regulation are invented; nothing here describes real law.
+
+Issued by the Coastal Monetary Authority under the Payment Systems Act. This Regulation takes effect on 1 July 2023.
+
+Rule 1. Scope
+This Regulation applies to every payment service provider and every merchant that accepts online payments from customers in the Coastal State.
+
+Rule 2. Definitions
+"Payment service provider" means an entity authorised to process electronic payments on behalf of merchants. "Merchant" means a business that sells goods or services and accepts payment for them.
+
+Rule 3. Merchant onboarding
+A payment service provider must verify the identity of a merchant before enabling online payments for that merchant.
+
+Rule 4. Storage of card data
+Merchants shall not store full card numbers after a transaction is authorised, unless the card data is tokenised.
+
+Rule 5. Refunds
+A merchant that accepts online payments shall process an approved refund within 7 working days.
+
+Rule 6. Fraud reporting
+Payment service providers are required to report fraud incidents to the Coastal Monetary Authority within 24 hours.
+
+Rule 7. Exemptions
+Merchants with fewer than 100 online transactions per month are exempt from Rule 5.
+
+Rule 8. Penalties
+A payment service provider that breaches Rule 3 or Rule 6 is liable to a fine of up to $250,000. A merchant that breaches Rule 4 is liable to a fine of up to $50,000.

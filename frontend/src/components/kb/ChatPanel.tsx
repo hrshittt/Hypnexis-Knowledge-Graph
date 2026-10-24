@@ -87,7 +87,7 @@ export default function ChatPanel(p: Props) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
-            placeholder={p.hasDocuments ? 'Ask about themes, facts, connections or comparisons…' : 'Upload documents first…'}
+            placeholder={p.hasDocuments ? 'Ask about themes, facts or connections…' : 'Upload documents first…'}
             rows={1}
             className="max-h-32 min-h-[44px] flex-1 resize-none rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-[14px] text-slate-800 placeholder-slate-400 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/15"
             aria-label="Question"

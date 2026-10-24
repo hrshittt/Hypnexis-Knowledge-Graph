@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { kbApi } from '../api/kb';
+import { kbApi as sharedKbApi, type KbApi } from '../api/kb';
 import type { GraphPayload, Job, KBDocument, KBStatus, UploadResult } from '../types/kb';
 
 /**
  * Polls /status (fast while ingestion jobs run) and refetches the graph and the
  * document list whenever the backend's graph_version changes.
+ * `kbApi` selects the knowledge base: the shared demo corpus (default) or a workspace's.
  */
-export function useKnowledgeBase() {
+export function useKnowledgeBase(kbApi: KbApi = sharedKbApi) {
   const [status, setStatus] = useState<KBStatus | null>(null);
   const [documents, setDocuments] = useState<KBDocument[]>([]);
   const [graph, setGraph] = useState<GraphPayload | null>(null);
@@ -23,7 +24,7 @@ export function useKnowledgeBase() {
     setDocuments(docs);
     setGraph(g);
     versionRef.current = g.version;
-  }, []);
+  }, [kbApi]);
 
   const poll = useCallback(async () => {
     try {
@@ -44,7 +45,7 @@ export function useKnowledgeBase() {
       failures.current += 1;
       setError((e as Error).message);
     }
-  }, [refreshData]);
+  }, [kbApi, refreshData]);
 
   useEffect(() => {
     let alive = true;

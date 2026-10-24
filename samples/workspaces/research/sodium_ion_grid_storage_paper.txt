@@ -1,0 +1,40 @@
+Sodium-Ion Batteries for Grid Storage: A Field Evaluation at the Harbor Storage Facility
+
+Fictional sample document for the Hypnexis demo. The authors, data and findings are invented.
+
+Priya Natarajan and Ravi Menon
+Voltaic Systems; Kestrel University
+Published 2023
+
+Abstract
+
+We report eighteen months of field data from 200 megawatt-hours of sodium-ion storage at the Harbor Storage Facility. The batteries retained 96 percent of their capacity and replaced the evening output of the Harbor Coal Plant. We find that sodium-ion chemistry is a viable alternative to lithium-ion for grid storage in coastal climates.
+
+Introduction
+
+Grid operators need storage that avoids cobalt and lithium supply constraints. The problem of seasonal capacity fade in humid coastal sites has not been studied for sodium-ion batteries. This paper presents the first long-run field evaluation of sodium-ion storage on a utility grid.
+
+Data
+
+The dataset contains five-minute telemetry from 1,600 battery modules between January 2022 and June 2023. Weather records come from the Port Calder airport station.
+
+Methods
+
+We use a degradation model that separates calendar ageing from cycle ageing. We compare measured capacity with laboratory cycling tests performed at Kestrel University.
+
+Results
+
+The modules retained 96 percent of rated capacity after eighteen months. Round-trip efficiency averaged 89 percent. Capacity fade was 30 percent lower than the laboratory tests predicted.
+
+Limitations
+
+The evaluation covers a single site and one battery supplier. Eighteen months is short relative to the expected fifteen-year service life.
+
+Future Work
+
+Future work will extend monitoring to the second phase of the Harbor Storage Facility and compare sodium-ion with iron-air storage.
+
+References
+
+1. Menon, R. (2020). Cathode materials for sodium-ion cells. Ferrite Labs Technical Note.
+2. Park, L. and Menon, R. (2021). Grid batteries and coal retirement. Aurora Institute Working Paper.

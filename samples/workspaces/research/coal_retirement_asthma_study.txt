@@ -1,0 +1,41 @@
+Coal Plant Retirement and Childhood Asthma Admissions in Port Calder: A Difference-in-Differences Study
+
+Fictional sample document for the Hypnexis demo. The authors, data and findings are invented.
+
+Amina Diallo, Samuel Okafor and Lena Park
+Harbor Medical Center; Aurora Institute
+Published 2024
+
+Abstract
+
+We estimate the effect of closing the Harbor Coal Plant on childhood asthma admissions in Port Calder. Using monthly hospital admission records from 2019 to 2023 and a difference-in-differences design with two comparison towns, we find that admissions fell by 18 percent in the twelve months after the closure. The decline was concentrated among children under ten. The results suggest that retiring coal plants yields measurable short-term health benefits.
+
+Introduction
+
+Fine particulate pollution is linked to childhood asthma in coastal towns. The Clean Horizon Act required the closure of the Harbor Coal Plant in March 2023. This paper addresses whether the closure reduced asthma admissions among children. Our contribution is the first causal estimate of a coal retirement effect for a coastal grid region.
+
+Data
+
+The study uses monthly admission records from Harbor Medical Center and two comparison hospitals in Kestrel Bay and Saltmarsh. The dataset covers 2019 to 2023 and includes 4,812 pediatric asthma admissions. Air-quality readings come from three monitoring stations operated by the Coastal Energy Commission.
+
+Methods
+
+We apply a difference-in-differences model with town and month fixed effects. Standard errors are clustered by town. We also estimate an event-study specification to test for pre-trends before the closure.
+
+Results
+
+Admissions in Port Calder fell by 18 percent relative to the comparison towns after the closure. Fine particulate concentrations dropped by 22 percent over the same period. The event-study estimates show no significant pre-trends before March 2023.
+
+Limitations
+
+The post-closure window covers only twelve months, so long-term effects remain uncertain. Admission records do not capture asthma cases treated outside hospitals. The comparison towns may differ from Port Calder in ways the model does not control for.
+
+Future Work
+
+Future research should extend the window to three years and link admissions to individual exposure estimates.
+
+References
+
+1. Diallo, A. (2022). Air quality and pediatric respiratory health in Port Calder. Coastal Health Review.
+2. Park, L. and Menon, R. (2021). Grid batteries and coal retirement. Aurora Institute Working Paper.
+3. Coastal Energy Commission (2021). Clean Horizon Act implementation brief.
