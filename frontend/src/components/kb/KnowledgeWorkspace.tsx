@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Filter, FileText, MessageSquareText, Sparkles } from 'lucide-react';
+import { AlertTriangle, Database, Filter, FileText, MessageSquareText, Sparkles } from 'lucide-react';
 import type { KbApi } from '../../api/kb';
 import { platformApi } from '../../api/platform';
 import { useKnowledgeBase } from '../../hooks/useKnowledgeBase';
 import { useKBChat } from '../../hooks/useKBChat';
 import { useMediaQuery } from '../../lib/hooks';
 import { colorForIndex } from '../../lib/graphColors';
-import type { Answer, ExampleQuestion, GraphPayload, Selection } from '../../types/kb';
+import type { Answer, ExampleQuestion, GraphPayload, GraphStoreInfo, Selection } from '../../types/kb';
 import DocumentPanel from './DocumentPanel';
 import ChatPanel from './ChatPanel';
 import GraphView, { type HighlightSets } from './GraphView';
@@ -15,6 +15,11 @@ import Inspector from './Inspector';
 
 const toSets = (h: Answer['highlight']): HighlightSets => ({
   nodes: new Set(h.nodes), edges: new Set(h.edges), pathEdges: new Set(h.path_edges), communities: new Set(h.communities),
+  documents: new Set(h.documents ?? []),
+});
+
+const spotlight = (parts: Partial<HighlightSets>): HighlightSets => ({
+  nodes: new Set(), edges: new Set(), pathEdges: new Set(), communities: new Set(), documents: new Set(), ...parts,
 });
 
 type LeftTab = 'ask' | 'explore' | 'documents';
@@ -60,7 +65,7 @@ export default function KnowledgeWorkspace({
     answers.set(turnId, a);
     setActiveTurn(turnId);
     const h = a.highlight;
-    setHighlight(h.nodes.length || h.edges.length || h.communities.length ? toSets(h) : null);
+    setHighlight(h.nodes.length || h.edges.length || h.communities.length || h.documents?.length ? toSets(h) : null);
     setSelection(null);
     setFocusToken((t) => t + 1);
   }, [answers]);
@@ -98,23 +103,28 @@ export default function KnowledgeWorkspace({
     const g = kb.graph;
     if (s?.kind === 'topic') {
       recordTopic(s.id);
-      setHighlight({ nodes: new Set(), edges: new Set(), pathEdges: new Set(), communities: new Set([s.id]) });
+      setHighlight(spotlight({ communities: new Set([s.id]) }));
       setActiveTurn(null);
       setFocusToken((t) => t + 1);
     } else if (s?.kind === 'entity' && g && !highlight?.nodes.has(s.id)) {
       const edges = g.edges.filter((e) => e.source === s.id || e.target === s.id);
-      setHighlight({
+      setHighlight(spotlight({
         nodes: new Set([s.id, ...edges.map((e) => (e.source === s.id ? e.target : e.source))]),
-        edges: new Set(edges.map((e) => e.id)), pathEdges: new Set(), communities: new Set(),
-      });
+        edges: new Set(edges.map((e) => e.id)),
+      }));
       setActiveTurn(null);
     } else if (s?.kind === 'relation' && g && !highlight?.edges.has(s.id)) {
       const e = g.edges.find((x) => x.id === s.id);
       if (e) {
-        setHighlight({ nodes: new Set([e.source, e.target]), edges: new Set([e.id]), pathEdges: new Set(), communities: new Set() });
+        setHighlight(spotlight({ nodes: new Set([e.source, e.target]), edges: new Set([e.id]) }));
         setActiveTurn(null);
         setFocusToken((t) => t + 1);
       }
+    } else if (s?.kind === 'document' && g) {
+      const ents = (g.doc_links ?? []).filter((l) => l.doc_id === s.id).map((l) => l.entity_id);
+      setHighlight(spotlight({ nodes: new Set(ents), documents: new Set([s.id]) }));
+      setActiveTurn(null);
+      setFocusToken((t) => t + 1);
     }
   };
 
@@ -124,7 +134,7 @@ export default function KnowledgeWorkspace({
   };
 
   const highlightNodes = (ids: string[]) => {
-    setHighlight({ nodes: new Set(ids), edges: new Set(), pathEdges: new Set(), communities: new Set() });
+    setHighlight(spotlight({ nodes: new Set(ids) }));
     setActiveTurn(null);
     setFocusToken((t) => t + 1);
   };
@@ -159,6 +169,7 @@ export default function KnowledgeWorkspace({
               <Sparkles className="h-3 w-3" /> {llm.active ? 'Gemini mode' : 'Extractive mode'}
             </span>
           )}
+          {kb.status?.graph_store && <GraphStoreBadge info={kb.status.graph_store} />}
         </div>
         {kb.error && (
           <div className="flex items-start gap-2 border-b border-danger/20 bg-danger-soft px-4 py-2 text-[12.5px] text-danger-ink" role="alert">
@@ -256,6 +267,23 @@ export default function KnowledgeWorkspace({
         {wide && selection && <div className="w-[360px] shrink-0 border-l border-line">{inspector}</div>}
       </div>
     </div>
+  );
+}
+
+/** Which store holds the knowledge graph — never implies Neo4j when the local fallback is in use. */
+function GraphStoreBadge({ info }: { info: GraphStoreInfo }) {
+  const neo4j = info.backend === 'neo4j';
+  const label = neo4j ? (info.connected ? 'Graph: Neo4j' : 'Graph: Neo4j (disconnected)') : 'Graph: SQLite (local)';
+  const title = neo4j
+    ? `Neo4j at ${info.uri} · database ${info.database} · namespace ${info.namespace} · graph queries run as Cypher`
+      + (info.error ? `\n${info.error}` : '')
+    : `Local SQLite graph + NetworkX traversal (fallback). ${info.fallback_reason ?? ''}`;
+  const tone = neo4j && info.connected ? 'bg-emerald-50 text-emerald-700'
+    : neo4j ? 'bg-danger-soft text-danger-ink' : 'bg-warn-soft text-warn-ink';
+  return (
+    <span title={title} className={`flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ${tone}`}>
+      <Database className="h-3 w-3" /> {label}
+    </span>
   );
 }
 

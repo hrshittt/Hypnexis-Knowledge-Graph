@@ -5,6 +5,12 @@ Every knob has a safe default so the KB runs with zero configuration:
   - no GEMINI_API_KEY  → heuristic extraction + extractive (quoted) answers
   - KB_EMBEDDING_MODEL=hash → offline hashing embedder (used by tests)
   - KB_RERANKER_MODEL=none  → skip the CrossEncoder
+
+Graph store (KB_GRAPH_STORE):
+  - neo4j  → Neo4j is required; startup fails with a clear error if it is unreachable
+  - auto   → Neo4j when NEO4J_URI is set and reachable, otherwise the local SQLite + NetworkX
+             graph (reported in /api/kb/status and shown as a warning in the UI)
+  - sqlite → local SQLite + NetworkX graph only (development / tests)
 """
 
 import os
@@ -53,10 +59,14 @@ class KBSettings:
     extraction_concurrency: int = field(default_factory=lambda: _env_int("KB_EXTRACTION_CONCURRENCY", 4))
     community_resolution: float = field(default_factory=lambda: _env_float("KB_COMMUNITY_RESOLUTION", 1.2))
 
-    neo4j_uri: str = field(default_factory=lambda: os.getenv("NEO4J_URI", ""))
+    graph_store: str = field(default_factory=lambda: os.getenv("KB_GRAPH_STORE", "auto").strip().lower())
+    neo4j_uri: str = field(default_factory=lambda: os.getenv("NEO4J_URI", "").strip())
     neo4j_user: str = field(default_factory=lambda: os.getenv("NEO4J_USER", "neo4j"))
     neo4j_password: str = field(default_factory=lambda: os.getenv("NEO4J_PASSWORD", ""))
     neo4j_database: str = field(default_factory=lambda: os.getenv("NEO4J_DATABASE", "neo4j"))
+    # every node/edge carries this namespace, so several knowledge bases (or the test suite)
+    # can share one Neo4j database without touching each other's data
+    neo4j_namespace: str = field(default_factory=lambda: os.getenv("NEO4J_NAMESPACE", "default"))
 
     @property
     def uploads_dir(self) -> Path:

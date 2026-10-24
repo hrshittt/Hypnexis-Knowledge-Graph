@@ -200,3 +200,31 @@ def test_llm_can_declare_insufficient(tmp_path):
     svc = _llm_kb(tmp_path, "INSUFFICIENT_EVIDENCE: the brief does not mention revenue.")
     ans = run(svc.answer("What revenue did Voltaic Systems report from storage?"))
     assert not ans["sufficient"] and "revenue" in ans["answer"]
+
+
+# ── graph highlighting: evidence paths + source documents ────────────────────
+
+def test_answer_highlights_the_source_documents_of_its_evidence(loaded_kb):
+    ans = run(loaded_kb.answer("How is the Clean Horizon Act connected to childhood asthma?"))
+    hl = ans["highlight"]
+    by_id = {s["id"]: s for s in ans["sources"]}
+    fact_docs = {by_id[sid]["doc_id"] for f in ans["graph_facts"] for sid in f["source_ids"]}
+    assert set(hl["documents"]) == {s["doc_id"] for s in ans["sources"] if s["cited"]} | fact_docs
+    names = {d["doc_id"]: d["filename"] for d in loaded_kb.store.list_documents()}
+    # the path crosses the PDF annual report and the health study
+    assert {"meridian_grid_annual_report.pdf", "port_calder_health_study.txt"} <= {names[d] for d in hl["documents"]}
+    assert len(hl["path_edges"]) == ans["paths"][0]["hops"]
+
+    g = loaded_kb.graph_payload()
+    node_ids = {n["id"] for n in g["nodes"]}
+    assert set(hl["documents"]) <= {d["doc_id"] for d in g["documents"]}
+    assert g["doc_links"] and all(l["entity_id"] in node_ids for l in g["doc_links"])
+    # every highlighted path entity is linked to at least one highlighted source document
+    linked = {(l["doc_id"], l["entity_id"]) for l in g["doc_links"]}
+    for n in ans["paths"][0]["nodes"]:
+        assert any((d, n["id"]) in linked for d in hl["documents"]), n["name"]
+
+
+def test_insufficient_answer_highlights_no_documents(loaded_kb):
+    ans = run(loaded_kb.answer("Who won the 2022 FIFA World Cup?"))
+    assert not ans["sufficient"] and ans["highlight"]["documents"] == []

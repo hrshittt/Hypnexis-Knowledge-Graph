@@ -1,0 +1,7 @@
+Northwind Robotics Field Memo
+
+Northwind Robotics is a robotics company headquartered in Lyonsville. Northwind Robotics was founded in 2015 by Maya Ortiz, a former aerospace engineer.
+
+In 2021 Northwind Robotics acquired Helio Sensors. Helio Sensors manufactures lidar units for autonomous tractors. Dr. Samuel Achebe leads the research division of Northwind Robotics.
+
+The Greenfield Farming Cooperative operates autonomous tractors built by Northwind Robotics. The cooperative is based in Marlow County. Soil compaction from heavy machinery reduces crop yields, according to the cooperative's agronomists.

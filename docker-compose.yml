@@ -1,0 +1,46 @@
+# Local stack for the Knowledge Base.
+#
+#   docker compose up -d neo4j          # graph database only (run the backend with uvicorn)
+#   docker compose --profile full up -d # graph database + backend image (slow first build)
+#
+# Neo4j Browser: http://localhost:7474  (user neo4j, password = NEO4J_PASSWORD from .env)
+# The fallback password below matches .env.example and is for local development only.
+
+services:
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: kb-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-change-me-local-dev}
+      NEO4J_server_memory_heap_max__size: 1G
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "${NEO4J_PASSWORD:-change-me-local-dev}", "RETURN 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 15s
+
+  backend:
+    profiles: ["full"]
+    build: .
+    ports:
+      - "8000:7860"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      KB_GRAPH_STORE: neo4j
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-change-me-local-dev}
+    depends_on:
+      neo4j:
+        condition: service_healthy
+
+volumes:
+  neo4j_data:

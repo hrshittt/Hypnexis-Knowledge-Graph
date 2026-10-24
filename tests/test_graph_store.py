@@ -102,3 +102,21 @@ def test_health_study_forms_its_own_topic(loaded_kb):
                for e in loaded_kb.store.get_entities(list(loaded_kb.store.alias_index().values())).values()}
     assert by_name["Amina Diallo"] == by_name["childhood asthma"]
     assert by_name["Amina Diallo"] != by_name["Voltaic Systems"]
+
+
+def test_topic_labels_name_themes_not_organisations(loaded_kb):
+    topics = loaded_kb.store.communities()
+    ents = loaded_kb.store.get_entities(list(loaded_kb.store.alias_index().values()))
+    named = {e["name"].lower() for e in ents.values() if e["type"] in ("Organization", "Person", "Location")}
+    labels = {t["label"] for t in topics}
+    assert "Fine Particulate Pollution & Childhood Asthma" in labels
+    for label in labels:
+        assert not all(part.lower() in named for part in label.split(" & ")), label
+
+
+def test_topics_are_deterministic(loaded_kb):
+    def snapshot():
+        return sorted((t["label"], t["size"], tuple(t["top_entities"])) for t in loaded_kb.store.communities())
+    before = snapshot()
+    run(loaded_kb.rebuild_topics())
+    assert snapshot() == before

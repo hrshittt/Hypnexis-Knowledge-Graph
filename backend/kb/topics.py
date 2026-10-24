@@ -3,8 +3,10 @@ Topic augmentation — community detection, grounded topic summaries, cross-topi
 
   1. Weighted entity graph: extracted relations (weight grows with distinct evidence)
      + co-mentions in the same passage (weaker signal).
-  2. Louvain communities (networkx, fixed seed → stable topics between rebuilds).
-  3. Each community gets a label, TF-IDF keywords, the documents it spans and a summary:
+  2. Louvain communities (networkx, fixed seed; inputs are sorted so the result is the same
+     whichever graph store returned the rows and whatever Python's set order is).
+  3. Each community gets a theme label (Gemini title, or its central concepts / keywords),
+     TF-IDF keywords, the documents it spans and a summary:
        - LLM summary (Gemini) over the community's triples + passages, citations validated
        - otherwise an extractive summary of the passages that mention the most members
      Summaries carry [n] markers that index `evidence_chunk_ids`, so they are checkable.
@@ -22,7 +24,7 @@ import networkx as nx
 from backend.kb import lexicon as L
 from backend.kb.llm import LLMUnavailable
 from backend.core.ranking import jaccard_sim as jaccard
-from backend.kb.text_utils import STOPWORDS, find_all_ci, normalize_name, split_sentences, tokenize
+from backend.kb.text_utils import STOPWORDS, find_all_ci, normalize_name, split_sentences, stem, tokenize
 from backend.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -81,7 +83,7 @@ def scan_mentions(chunks: List[Dict[str, Any]], alias_index: Dict[str, str],
                     continue
                 found.add(eid)
                 break
-        rows.extend((eid, ch["chunk_id"], ch["doc_id"]) for eid in found)
+        rows.extend((eid, ch["chunk_id"], ch["doc_id"]) for eid in sorted(found))
     return rows
 
 
@@ -107,11 +109,11 @@ def build_weighted_graph(entities: Dict[str, Dict[str, Any]], relations: List[Di
         else:
             G.add_edge(s, o, weight=w)
     salient = {e for e in entities if e in related or len(doc_count.get(e, ())) >= 2}
-    G.add_nodes_from(n for n in salient if n not in G)
+    G.add_nodes_from(n for n in sorted(salient) if n not in G)
     mention_total = Counter(eid for eid, _, _ in mentions)
-    for cid, ents in by_chunk.items():
-        ents = [e for e in ents if e in salient]
-        ents = sorted(ents, key=lambda e: -mention_total[e])[:15]
+    for cid in sorted(by_chunk):
+        ents = [e for e in by_chunk[cid] if e in salient]
+        ents = sorted(ents, key=lambda e: (-mention_total[e], e))[:15]
         for i in range(len(ents)):
             for j in range(i + 1, len(ents)):
                 a, b = ents[i], ents[j]
@@ -151,6 +153,47 @@ def _keywords(member_names: List[str], member_chunks: Set[str], chunk_text: Dict
                     tf[t] += 1
     scored = {t: c * math.log((1 + n_sentences) / (1 + df[t])) for t, c in tf.items()}
     return [t for t, _ in sorted(scored.items(), key=lambda x: (-x[1], x[0]))[:k]]
+
+
+_THEME_TYPES = ("Concept", "Policy", "Project", "Technology", "Product", "Event")
+_SMALL_WORDS = {"a", "an", "and", "as", "at", "by", "for", "in", "of", "on", "or", "the", "to", "with"}
+
+
+def _title(phrase: str) -> str:
+    words = phrase.split()
+    return " ".join(w if (i and w.lower() in _SMALL_WORDS) or w[:1].isupper()
+                    else "-".join(p[:1].upper() + p[1:] for p in w.split("-")) for i, w in enumerate(words))
+
+
+def topic_label(ordered: List[str], entities: Dict[str, Dict[str, Any]], rel_degree: Counter,
+                keywords: List[str]) -> str:
+    """What the topic is *about*: up to two non-overlapping theme phrases. Candidates are the community's
+    concepts / policies / projects / technologies that take part in its relations, ranked by how many
+    relations they join, then by how many of the topic's phrases share their words ("perovskite" in
+    two concepts), then concepts before named themes; TF-IDF keywords fill in. Organisation and person
+    names are used only when nothing thematic exists."""
+    def terms(phrase: str) -> Set[str]:
+        return {stem(t) for t in tokenize(phrase) if t not in STOPWORDS}
+
+    rank = {m: i for i, m in enumerate(ordered)}
+    themed = [m for m in ordered if entities[m]["type"] in _THEME_TYPES and rel_degree[m] >= 1]
+    phrases = list(dict.fromkeys([entities[m]["name"].lower() for m in themed] + [k.lower() for k in keywords]))
+    support = Counter(t for p in phrases for t in terms(p))
+    themed.sort(key=lambda m: (-rel_degree[m], -max((support[t] for t in terms(entities[m]["name"])), default=0),
+                               entities[m]["type"] != "Concept", rank[m]))
+    picked: List[str] = []
+    seen: Set[str] = set()
+    for phrase in [entities[m]["name"] for m in themed] + [k for k in keywords if len(k) >= 4]:
+        toks = terms(phrase)
+        if not toks or toks & seen:
+            continue  # "batteries" adds nothing after "sodium-ion batteries"
+        picked.append(phrase)
+        seen |= toks
+        if len(picked) == 2:
+            break
+    if not picked:
+        picked = [entities[m]["name"] for m in ordered[:2]]
+    return " & ".join(_title(p) for p in picked)
 
 
 def extractive_summary(top_names: List[str], member_names: List[str], member_chunks: List[str],
@@ -259,26 +302,21 @@ async def rebuild_topics(store, llm=None, resolution: float = 1.0) -> Dict[str, 
         strength = {m: sum(G[m][n]["weight"] for n in G.neighbors(m) if n in members) for m in members}
         ordered = sorted(members, key=lambda m: (-strength[m], entities[m]["name"]))
         names = [entities[m]["name"] for m in ordered]
-        named = [entities[m]["name"] for m in ordered if entities[m]["type"] != "Concept"]
-        # a concept earns a place in the label only if it takes part in ≥2 extracted relations
-        rel_degree = Counter()
+        rel_degree: Counter = Counter()  # relations inside the community, per member
         for r in relations:
             if r["subject_id"] in members and r["object_id"] in members:
                 rel_degree[r["subject_id"]] += 1
                 rel_degree[r["object_id"]] += 1
-        concepts = [entities[m]["name"] for m in sorted(members, key=lambda m: -rel_degree[m])
-                    if entities[m]["type"] == "Concept" and rel_degree[m] >= 2]
-        label = " & ".join((named[:1] + concepts[:1]) if concepts and named else (named or
-                           [entities[m]["name"] for m in ordered])[:2])
         chunk_counter: Counter = Counter()
-        for m in members:
+        for m in sorted(members):
             chunk_counter.update(set(by_entity_chunks.get(m, [])))
-        member_chunks = [c for c, _ in chunk_counter.most_common()]
+        member_chunks = sorted(chunk_counter, key=lambda c: (-chunk_counter[c], c))
         doc_ids = [d for d, _ in Counter(chunk_doc[c] for c in member_chunks).most_common()]
         exclude = named_tokens | _RELATION_WORDS | {t for n in names for t in tokenize(n)}
         concept_kw = [entities[m]["name"] for m in ordered if entities[m]["type"] == "Concept"][:3]
         keywords = concept_kw + _keywords(names, set(member_chunks), chunk_text, df, n_sentences, exclude,
                                           k=6 - len(concept_kw))
+        label = topic_label(ordered, entities, rel_degree, keywords)
         triples = [(entities[r["subject_id"]]["name"], r["predicate"], entities[r["object_id"]]["name"])
                    for r in relations if r["subject_id"] in members and r["object_id"] in members]
 
@@ -287,7 +325,7 @@ async def rebuild_topics(store, llm=None, resolution: float = 1.0) -> Dict[str, 
         cached = store.cached_summary(cache_key)
         result = None
         if cached:
-            result = cached
+            result = dict(cached, label=cached["label"] if cached["method"] == "llm" else label)
         elif want == "llm":
             llm_budget -= 1
             result = await llm_summary(llm, names, triples, member_chunks, chunk_text)

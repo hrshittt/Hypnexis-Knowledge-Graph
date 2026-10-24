@@ -3,9 +3,11 @@ WorkspaceService — workspaces, membership roles, per-workspace knowledge bases
 document metadata, activity log and saved analyses.
 
 Isolation
-  Every workspace gets its own KnowledgeBaseService (own SQLite graph, Chroma index and
-  uploads under data/workspaces/<id>/kb). The embedder, reranker and LLM client are
-  shared with the global KB so models load once per process. The shared demo corpus
+  Every workspace gets its own KnowledgeBaseService (own documents, Chroma index and
+  uploads under data/workspaces/<id>/kb, and its own graph: the Neo4j namespace
+  "<NEO4J_NAMESPACE>.ws-<id>", or the SQLite fallback graph in that directory). The
+  embedder, reranker and LLM client are shared with the global KB so models load
+  once per process. The shared demo corpus
   (data/kb, /api/kb) is untouched by anything here.
 
 Roles (per workspace)
@@ -201,6 +203,8 @@ class WorkspaceService:
             embedder, reranker, llm = self.models()
             kb_settings = load_settings(data_dir=self.settings.workspace_dir(ws_id) / "kb",
                                         samples_dir=self.settings.samples_dir / ws["type"])
+            # isolation in Neo4j too: each workspace graph lives in its own namespace
+            kb_settings.neo4j_namespace = f"{kb_settings.neo4j_namespace}.ws-{ws_id}"
             if llm is None:
                 kb_settings.llm_mode = "off"
             svc = KnowledgeBaseService(kb_settings, embedder=embedder, reranker=reranker, llm=llm)

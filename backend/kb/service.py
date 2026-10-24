@@ -5,8 +5,11 @@ Ingestion lifecycle (per upload batch → one job):
   register_uploads()  validate type/size/content, sha256 duplicate check, save file, status=queued
   run_job()           for each doc: extract pages → chunk → index (Chroma + BM25)
                       → extract triples (Gemini if configured, else heuristics) → resolve entities
-                      → write nodes/edges/evidence → status=ready
-                      then rebuild topic communities once for the batch, optional Neo4j mirror
+                      → write nodes/edges/evidence to the graph store → status=ready
+                      then rebuild topic communities once for the batch
+Graph store: Neo4j (primary) or the local SQLite + NetworkX fallback — see store.open_store().
+Each document records which graph store holds its triples; documents extracted into a different
+store (e.g. before switching to Neo4j) are re-extracted from their stored chunks by a "resync" job.
 Queries go through the LangGraph workflow in qa_graph.py.
 """
 
@@ -28,7 +31,7 @@ from backend.kb.llm import build_llm
 from backend.kb.qa_graph import build_kb_graph
 from backend.kb.resolution import EntityResolver, relation_id_for
 from backend.kb.retriever import KBRetriever
-from backend.kb.store import KnowledgeStore
+from backend.kb.store import open_store
 from backend.kb.text_utils import display_name, find_all_ci, locate_sentence, normalize_name
 from backend.kb.topics import rebuild_topics
 from backend.kb.vector_index import ChunkIndex
@@ -45,7 +48,9 @@ class KnowledgeBaseService:
         self.settings = settings or load_settings()
         self.settings.ensure_dirs()
         self.warnings: List[str] = []
-        self.store = KnowledgeStore(self.settings.sqlite_path)
+        self.store, self.graph_selection = open_store(self.settings)
+        if self.store.graph_backend != "neo4j" and self.settings.neo4j_uri:
+            self.warnings.append(self.graph_selection["fallback_reason"])  # Neo4j was wanted but is not in use
         interrupted = self.store.mark_interrupted()
         if interrupted:
             self.warnings.append(f"{interrupted} document(s) were interrupted by a restart; use Retry.")
@@ -72,8 +77,14 @@ class KnowledgeBaseService:
         self.jobs: Dict[str, Dict[str, Any]] = {}
         self._ingest_lock = asyncio.Lock()
         self._tasks: set = set()
-        self.neo4j_status: Dict[str, Any] = {"enabled": bool(self.settings.neo4j_uri)}
-        log.success(f"Knowledge base ready: {self.store.stats()}")
+        self.pending_resync = self._graph_out_of_sync()
+        self._resync_warning: Optional[str] = None
+        if self.pending_resync:
+            self._resync_warning = (
+                f"{len(self.pending_resync)} document(s) have no graph data in the active graph store "
+                f"({self.store.graph_backend}); they are re-extracted from their stored text.")
+            self.warnings.append(self._resync_warning)
+        log.success(f"Knowledge base ready ({self.store.graph_backend} graph store): {self.store.stats()}")
 
     def active_llm(self):
         return self.llm if (self.llm is not None and self.llm.available) else None
@@ -136,17 +147,24 @@ class KnowledgeBaseService:
 
     async def run_job(self, job_id: str) -> Dict[str, Any]:
         job = self.jobs[job_id]
+        resync = job.get("kind") == "resync"
         async with self._ingest_lock:
             job["status"] = "running"
             for doc_id in job["doc_ids"]:
                 job["current"] = doc_id
                 try:
-                    await self.ingest_document(doc_id, job)
+                    if resync:
+                        await self.reextract_document(doc_id, job)
+                    else:
+                        await self.ingest_document(doc_id, job)
                     job["done"].append(doc_id)
                 except Exception as e:
                     msg = e.message if isinstance(e, DocumentError) else f"{type(e).__name__}: {e}"
-                    log.error(f"Ingestion failed for {doc_id}: {msg}")
-                    self._purge(doc_id, keep_file=True, keep_row=True)
+                    log.error(f"{'Graph re-extraction' if resync else 'Ingestion'} failed for {doc_id}: {msg}")
+                    try:
+                        self._purge(doc_id, keep_file=True, keep_row=True)
+                    except Exception as pe:  # e.g. the graph database went away mid-job
+                        log.error(f"Cleanup after the failure also failed for {doc_id}: {pe}")
                     self.store.update_document(doc_id, status="failed", error=msg)
                     job["failed"].append({"doc_id": doc_id, "error": msg})
             job["current"] = None
@@ -157,10 +175,11 @@ class KnowledgeBaseService:
                 except Exception as e:
                     log.exception("Topic rebuild failed")
                     job["errors"].append(f"Topic rebuild failed: {e}")
-                await self._sync_neo4j()
             job["stage"] = "finished"
             job["status"] = "done" if not job["failed"] else ("partial" if job["done"] else "failed")
             job["finished_at"] = time.time()
+            if resync and not job["failed"] and self._resync_warning in self.warnings:
+                self.warnings.remove(self._resync_warning)
         return job
 
     async def ingest_document(self, doc_id: str, job: Optional[Dict[str, Any]] = None) -> None:
@@ -183,6 +202,39 @@ class KnowledgeBaseService:
                         "text": c.text} for c in chunks]
         await asyncio.to_thread(self.index.add, chunk_dicts)
 
+        methods = await self._extract_graph(doc, chunk_dicts, job)
+        n_ent, n_rel = self.store.doc_counts(doc_id)
+        self.store.update_document(
+            doc_id, status="ready", title=document_title(pages, doc["filename"]), num_pages=len(pages),
+            num_chunks=len(chunks), num_entities=n_ent, num_relations=n_rel,
+            extractor="llm" if methods.get("llm") else "heuristic", graph_backend=self.store.graph_id)
+        self.index.rebuild_bm25(self.store.all_chunks())
+        self.store.bump_version()
+        log.success(f"Ingested {doc['filename']}: {len(chunks)} chunks, {n_ent} entities, {n_rel} relations "
+                    f"({dict(methods)}) → {self.store.graph_backend}")
+
+    async def reextract_document(self, doc_id: str, job: Optional[Dict[str, Any]] = None) -> None:
+        """Rebuild one document's graph data in the active graph store from its stored chunks
+        (no re-parsing, no re-embedding)."""
+        doc = self.store.get_document(doc_id)
+        if doc is None:
+            raise DocumentError("missing", "Document record disappeared before re-extraction.")
+        chunks = [c for c in self.store.all_chunks(ready_only=False) if c["doc_id"] == doc_id]
+        if not chunks:
+            raise DocumentError("no_text", "No stored chunks; upload the document again.")
+        self.store.delete_doc_graph(doc_id)  # partial data from an interrupted earlier attempt
+        self.store.ensure_graph_chunks(doc_id)
+        if job:
+            job["progress"] = {"chunks_done": 0, "chunks_total": len(chunks)}
+        methods = await self._extract_graph(doc, chunks, job)
+        n_ent, n_rel = self.store.doc_counts(doc_id)
+        self.store.update_document(doc_id, num_entities=n_ent, num_relations=n_rel, graph_backend=self.store.graph_id,
+                                   extractor="llm" if methods.get("llm") else "heuristic")
+        self.store.bump_version()
+        log.success(f"Re-extracted {doc['filename']} into {self.store.graph_backend}: {n_ent} entities, {n_rel} relations")
+
+    async def _extract_graph(self, doc: Dict[str, Any], chunks: List[Dict[str, Any]],
+                             job: Optional[Dict[str, Any]]) -> Counter:
         if job:
             job["stage"] = f"extracting entities & relations: {doc['filename']}"
         heur = HeuristicExtractor(self.store.concept_norms(), self.store.named_norms())
@@ -191,7 +243,7 @@ class KnowledgeBaseService:
             extractor = LLMExtractor(llm, heur, self.settings.extraction_concurrency)
 
             async def one(c):
-                r = await extractor.extract(c.chunk_id, c.text, doc["filename"], c.page)
+                r = await extractor.extract(c["chunk_id"], c["text"], doc["filename"], c["page"])
                 if job:
                     job["progress"]["chunks_done"] += 1
                 return r
@@ -200,7 +252,7 @@ class KnowledgeBaseService:
             def run_heuristic():
                 out = []
                 for c in chunks:
-                    r = heur.extract(c.chunk_id, c.text)
+                    r = heur.extract(c["chunk_id"], c["text"])
                     heur.known_concepts |= {normalize_name(e.name) for e in r.entities if e.kind == "concept"}
                     heur.known_names |= {normalize_name(e.name) for e in r.entities if e.kind == "named"}
                     out.append(r)
@@ -208,18 +260,48 @@ class KnowledgeBaseService:
                         job["progress"]["chunks_done"] += 1
                 return out
             results = await asyncio.to_thread(run_heuristic)
+        self._write_extractions(doc["doc_id"], results)
+        return Counter(r.method for r in results)
 
-        self._write_extractions(doc_id, results)
-        n_ent, n_rel = self.store.doc_counts(doc_id)
-        methods = Counter(r.method for r in results)
-        self.store.update_document(
-            doc_id, status="ready", title=document_title(pages, doc["filename"]), num_pages=len(pages),
-            num_chunks=len(chunks), num_entities=n_ent, num_relations=n_rel,
-            extractor="llm" if methods.get("llm") else "heuristic")
-        self.index.rebuild_bm25(self.store.all_chunks())
-        self.store.bump_version()
-        log.success(f"Ingested {doc['filename']}: {len(chunks)} chunks, {n_ent} entities, {n_rel} relations "
-                    f"({dict(methods)})")
+    def _graph_out_of_sync(self) -> List[str]:
+        """Ready documents whose triples are not in the active graph store. Graph data of documents that
+        no longer exist is pruned (Neo4j may outlive a deleted data/kb directory) — but only in a namespace
+        this knowledge base owns, so a misconfigured shared NEO4J_NAMESPACE can never delete another
+        knowledge base's graph."""
+        docs = self.store.list_documents()
+        present = self.store.graph_doc_ids()
+        orphans = present - {d["doc_id"] for d in docs}
+        if orphans and not self.store.owns_namespace:
+            self.warnings.append(
+                f"The Neo4j namespace '{getattr(self.store, 'ns', '')}' is shared with another knowledge base "
+                f"({len(orphans)} unknown document(s) left untouched). Give each knowledge base its own NEO4J_NAMESPACE.")
+            orphans = set()
+        for orphan in orphans:
+            log.warning(f"Pruning graph data of unknown document {orphan} from the {self.store.graph_backend} store")
+            self.store.delete_doc_graph(orphan)
+        return [d["doc_id"] for d in docs if d["status"] == "ready"
+                and ((d.get("graph_backend") or "sqlite") != self.store.graph_id or d["doc_id"] not in present)]
+
+    def _resync_job(self) -> Optional[Dict[str, Any]]:
+        if not self.pending_resync:
+            return None
+        job = self._new_job(self.pending_resync)
+        job["kind"] = "resync"
+        self.pending_resync = []
+        return job
+
+    def start_graph_resync(self, recheck: bool = False) -> Optional[Dict[str, Any]]:
+        """Queue re-extraction for documents missing from the active graph store (needs a running loop)."""
+        if recheck:
+            self.pending_resync = self._graph_out_of_sync()
+        job = self._resync_job()
+        if job:
+            self.start_job(job["id"])
+        return job
+
+    async def resync_graph_and_wait(self) -> Optional[Dict[str, Any]]:
+        job = self._resync_job()
+        return await self.run_job(job["id"]) if job else None
 
     def _write_extractions(self, doc_id: str, results) -> None:
         resolver = EntityResolver(self.store.alias_index(), self.store.entity_info())
@@ -277,12 +359,8 @@ class KnowledgeBaseService:
             return
         self.index.delete_doc(doc_id)
         if keep_row:
-            with self.store.tx() as c:
-                c.execute("DELETE FROM evidence WHERE doc_id=?", (doc_id,))
-                c.execute("DELETE FROM relations WHERE relation_id NOT IN (SELECT DISTINCT relation_id FROM evidence)")
-                c.execute("DELETE FROM mentions WHERE doc_id=?", (doc_id,))
-                c.execute("DELETE FROM chunks WHERE doc_id=?", (doc_id,))
-                self.store.bump_version(c)
+            self.store.delete_doc_graph(doc_id)
+            self.store.delete_chunks(doc_id)
         else:
             self.store.delete_document(doc_id)
         if not keep_file and doc.get("stored_path"):
@@ -308,7 +386,6 @@ class KnowledgeBaseService:
                 self._remove_upload(Path(doc["stored_path"]))
             self.index.rebuild_bm25(self.store.all_chunks())
             stats["topics"] = await self.rebuild_topics()
-            await self._sync_neo4j()
             return {"deleted": doc_id, "filename": doc["filename"], **stats}
 
     def retry_document(self, doc_id: str) -> Dict[str, Any]:
@@ -333,7 +410,6 @@ class KnowledgeBaseService:
                 if d.get("stored_path"):
                     self._remove_upload(Path(d["stored_path"]))
             self.retriever.refresh(force=True)
-            await self._sync_neo4j()
             return {"reset": True, "documents_removed": len(docs)}
 
     def sample_files(self) -> List[Path]:
@@ -362,12 +438,6 @@ class KnowledgeBaseService:
         if reg["job"]:
             reg["job"] = await self.run_job(reg["job"]["id"])
         return reg
-
-    async def _sync_neo4j(self) -> None:
-        if not self.settings.neo4j_uri:
-            return
-        from backend.kb.neo4j_sync import sync_graph
-        self.neo4j_status = await asyncio.to_thread(sync_graph, self.store, self.settings)
 
     # ═════════════════════════════════════════════════════════════════════════
     # Questions
@@ -399,13 +469,19 @@ class KnowledgeBaseService:
         used = set(state.get("citations_used") or [])
         sources = [dict(s, cited=s["id"] in used) for s in ev["sources"]]
         facts = [dict(f, cited=f["id"] in used) for f in ev["facts"]]
+        # source documents to light up in the graph: those of cited evidence (any graph fact's
+        # evidence counts, since every fact links to its source passage)
+        cited_ids = used | {sid for f in facts for sid in f["source_ids"]}
+        highlight = dict(ev["highlight"], documents=list(dict.fromkeys(
+            s["doc_id"] for s in sources if s["id"] in cited_ids))) if state.get("sufficient") else \
+            dict(ev["highlight"], documents=[])
         return {
             "question": state.get("question"), "route": state.get("route"), "route_reason": state.get("route_reason"),
             "route_method": state.get("route_method"), "answer": state.get("answer", ""),
             "sufficient": bool(state.get("sufficient")), "sufficiency_reason": state.get("sufficiency_reason"),
             "mode": state.get("mode"), "sources": sources, "graph_facts": facts, "paths": ev["paths"],
             "topics": ev["topics"], "comparison": ev["comparison"], "notes": ev.get("notes", []),
-            "highlight": ev["highlight"], "linked_entities": state.get("linked", []),
+            "highlight": highlight, "linked_entities": state.get("linked", []),
             "citations_used": state.get("citations_used", []), "warnings": state.get("warnings", []),
             "followups": state.get("followups", []), "trace": state.get("trace", []),
             "latency_ms": int((time.monotonic() - t0) * 1000),
@@ -423,7 +499,8 @@ class KnowledgeBaseService:
                     "last_error": getattr(llm, "last_error", None),
                     "mode": "gemini" if self.active_llm() else "heuristic/extractive"},
             "embedding_model": self.embedder.name, "reranker": getattr(self.reranker, "name", None),
-            "dense_index": self.index.dense_ok, "graph_store": "sqlite", "neo4j": self.neo4j_status,
+            "dense_index": self.index.dense_ok,
+            "graph_store": {**self.store.graph_info(), **self.graph_selection},
             "warnings": self.warnings,
             "jobs": [j for j in self.jobs.values() if j["status"] in ("queued", "running")],
             "upload": {"max_mb": self.settings.max_upload_mb, "types": sorted(ALLOWED_TYPES)},
@@ -445,9 +522,11 @@ class KnowledgeBaseService:
             degree[r["object_id"]] += 1
         mention_count: Counter = Counter()
         doc_sets: Dict[str, set] = defaultdict(set)
+        doc_mentions: Counter = Counter()
         for eid, _, did in self.store.entity_mentions():
             mention_count[eid] += 1
             doc_sets[eid].add(did)
+            doc_mentions[(did, eid)] += 1
         cands = [e for e in R.entities if degree[e] > 0 or len(doc_sets[e]) >= 2]
         cands.sort(key=lambda e: -(degree[e] * 2 + mention_count[e]))
         keep = set(cands[:limit])
@@ -464,9 +543,15 @@ class KnowledgeBaseService:
                    "size": t["size"], "doc_ids": t["doc_ids"], "evidence_chunk_ids": t["evidence_chunk_ids"],
                    "method": t["method"], "color_index": t["rank"],
                    "top_entities": [R.entity_brief(e) for e in t["top_entities"][:6]]} for t in self.store.communities()]
+        docs = self.store.list_documents("ready")
         return {"version": self.store.graph_version(), "nodes": nodes, "edges": edges, "topics": topics,
                 "topic_links": self.store.community_links(), "truncated": len(cands) > limit,
-                "documents": [{"doc_id": d["doc_id"], "filename": d["filename"]} for d in self.store.list_documents("ready")]}
+                "documents": [{"doc_id": d["doc_id"], "filename": d["filename"], "title": d.get("title"),
+                               "num_pages": d.get("num_pages"), "num_entities": d.get("num_entities"),
+                               "num_relations": d.get("num_relations")} for d in docs],
+                # which documents mention which (shown) entities — source-document provenance in the graph
+                "doc_links": [{"doc_id": did, "entity_id": eid, "mentions": n}
+                              for (did, eid), n in sorted(doc_mentions.items()) if eid in keep]}
 
     def entity_detail(self, entity_id: str) -> Dict[str, Any]:
         R = self.retriever

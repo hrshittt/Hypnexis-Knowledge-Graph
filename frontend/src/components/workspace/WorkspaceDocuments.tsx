@@ -46,7 +46,7 @@ export function WorkspaceDocuments({ ws, metaFields, allowVerified, onChanged, i
   const input = useRef<HTMLInputElement>(null);
   const wasBusy = useRef(false);
 
-  const list = docs.data ?? [];
+  const list = useMemo(() => docs.data ?? [], [docs.data]);
   const active = list.some((d) => d.status === 'queued' || d.status === 'processing') || (status?.jobs.length ?? 0) > 0;
 
   useEffect(() => { api.status().then(setStatus).catch(() => {}); }, [api]);

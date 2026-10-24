@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ForceGraph2D, { type ForceGraphMethods, type LinkObject, type NodeObject } from 'react-force-graph-2d';
-import { Eraser, Maximize2, Search, Tag, Waypoints } from 'lucide-react';
+import { Eraser, FileText, Maximize2, Search, Tag, Waypoints } from 'lucide-react';
 import type { GraphEdge, GraphNode, GraphPayload, Selection } from '../../types/kb';
 import {
-  HL_EDGE, NO_COMMUNITY, PATH_COLOR, PATH_PARTICLE, colorForIndex, convexHull, rgba,
+  DOC_COLOR, DOC_HL, HL_EDGE, NO_COMMUNITY, PATH_COLOR, PATH_PARTICLE, colorForIndex, convexHull, rgba,
 } from '../../lib/graphColors';
 
 export interface HighlightSets {
@@ -11,10 +11,15 @@ export interface HighlightSets {
   edges: Set<string>;
   pathEdges: Set<string>;
   communities: Set<string>;
+  /** source documents (doc_ids) behind the current answer; absent for analysis graphs */
+  documents?: Set<string>;
 }
 
 type N = NodeObject<GraphNode>;
 type L = LinkObject<GraphNode, GraphEdge>;
+
+const docNodeId = (docId: string) => `doc:${docId}`;
+const docIdOf = (nodeId: string) => nodeId.slice(4);
 
 interface Props {
   graph: GraphPayload | null;
@@ -38,6 +43,7 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
   const [hoverNode, setHoverNode] = useState<string | null>(null);
   const [hoverLink, setHoverLink] = useState<string | null>(null);
   const [showLabels, setShowLabels] = useState(true);
+  const [showDocs, setShowDocs] = useState(true);
   const [query, setQuery] = useState('');
   const positions = useRef(new Map<string, { x: number; y: number }>());
   const fitted = useRef(false);
@@ -79,29 +85,57 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
       const sign = e.source < e.target ? 1 : -1;
       return { ...e, curvature: n > 1 ? sign * (i - (n - 1) / 2) * 0.6 : 0 };
     });
+    if (showDocs) {
+      // source documents as nodes, linked to the entities they mention (provenance)
+      const shown = new Set(graph.nodes.map((n) => n.id));
+      const docLinks = (graph.doc_links ?? []).filter((l) => shown.has(l.entity_id));
+      for (const d of graph.documents) {
+        const id = docNodeId(d.doc_id);
+        const p = positions.current.get(id);
+        const n = docLinks.filter((l) => l.doc_id === d.doc_id).length;
+        if (!n) continue; // only documents that mention a shown entity (analysis graphs have no links)
+        nodes.push({ id, name: d.title || d.filename, type: 'Document', community: null, degree: n, mentions: 0,
+          doc_count: 0, kind: 'document', ...(p ?? {}) });
+      }
+      for (const l of docLinks) {
+        links.push({ id: `dl:${l.doc_id}:${l.entity_id}`, source: docNodeId(l.doc_id), target: l.entity_id,
+          predicate: 'mentions', evidence_count: l.mentions, doc_count: 1, cross_topic: false, kind: 'doc', curvature: 0 });
+      }
+    }
     return { nodes, links };
-  }, [graph]);
+  }, [graph, showDocs]);
 
   const nodeById = useMemo(() => new Map(data.nodes.map((n) => [n.id as string, n])), [data]);
 
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
+    // d3's default link strength, computed over entity relations only; document links barely pull,
+    // so documents settle near what they mention without reshaping the topic clusters
+    const deg = new Map<string, number>();
+    for (const l of data.links) {
+      if (l.kind === 'doc') continue;
+      for (const end of [endId(l.source), endId(l.target)]) deg.set(end, (deg.get(end) ?? 0) + 1);
+    }
     fg.d3Force('charge')?.strength?.(-150);
-    fg.d3Force('link')?.distance?.(60);
+    fg.d3Force('link')?.distance?.((l: L) => (l.kind === 'doc' ? 110 : 60));
+    fg.d3Force('link')?.strength?.((l: L) => (l.kind === 'doc' ? 0.02
+      : 1 / Math.max(1, Math.min(deg.get(endId(l.source)) ?? 1, deg.get(endId(l.target)) ?? 1))));
   }, [data]);
 
   const fitHighlight = useCallback(() => {
     const fg = fgRef.current;
     if (!fg) return;
-    if (highlight && highlight.nodes.size > 0 && highlight.nodes.size <= 2) {
+    const inFocus = (n: N) => !!highlight && (highlight.nodes.has(n.id as string)
+      || (n.kind === 'document' && !!highlight.documents?.has(docIdOf(n.id as string))));
+    if (highlight && highlight.nodes.size > 0 && highlight.nodes.size <= 2 && !highlight.documents?.size) {
       const pts = Array.from(highlight.nodes).map((id) => nodeById.get(id)).filter((n): n is N => n?.x !== undefined);
       if (pts.length) {
         fg.centerAt(pts.reduce((s, n) => s + (n.x ?? 0), 0) / pts.length, pts.reduce((s, n) => s + (n.y ?? 0), 0) / pts.length, 600);
         fg.zoom(2.2, 600);
       }
-    } else if (highlight && highlight.nodes.size > 0) {
-      fg.zoomToFit(700, 80, (n) => highlight.nodes.has(n.id as string));
+    } else if (highlight && (highlight.nodes.size > 0 || !!highlight.documents?.size)) {
+      fg.zoomToFit(700, 80, inFocus);
     } else if (highlight && highlight.communities.size > 0) {
       fg.zoomToFit(700, 60, (n) => !!n.community && highlight.communities.has(n.community));
     } else {
@@ -127,10 +161,56 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
 
   const selectedNode = selection?.kind === 'entity' ? selection.id : null;
   const selectedEdge = selection?.kind === 'relation' ? selection.id : null;
+  const selectedDoc = selection?.kind === 'document' ? selection.id : null;
+
+  const drawDocument = useCallback((node: N, ctx: CanvasRenderingContext2D, scale: number) => {
+    const id = node.id as string;
+    const x = node.x ?? 0;
+    const y = node.y ?? 0;
+    const docId = docIdOf(id);
+    const hl = highlight?.documents?.has(docId) ?? false;
+    const selected = selectedDoc === docId;
+    const w = 7;
+    const h = 9;
+    ctx.save();
+    ctx.globalAlpha = !highlight ? 0.9 : hl ? 1 : 0.15;
+    ctx.beginPath();
+    ctx.rect(x - w, y - h, w * 2, h * 2);
+    ctx.fillStyle = hl ? DOC_HL : '#ffffff';
+    ctx.fill();
+    ctx.lineWidth = (hl || selected ? 2.4 : 1.3) / scale;
+    ctx.strokeStyle = hl || selected ? PATH_COLOR : DOC_COLOR;
+    ctx.stroke();
+    ctx.beginPath(); // text lines, so it reads as a page
+    for (const dy of [-4, -1, 2, 5]) {
+      ctx.moveTo(x - w + 3, y + dy);
+      ctx.lineTo(x + w - 3, y + dy);
+    }
+    ctx.lineWidth = 0.9 / scale;
+    ctx.strokeStyle = hl ? PATH_COLOR : DOC_COLOR;
+    ctx.stroke();
+    if (hl || selected || hoverNode === id || (showLabels && !highlight && scale > 1.1)) {
+      const label = node.name.length > 32 ? `${node.name.slice(0, 31)}…` : node.name;
+      const fs = (hl || selected ? 12 : 10.5) / scale;
+      ctx.font = `${hl || selected ? 600 : 500} ${fs}px Inter, ui-sans-serif, system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.lineWidth = 3.5 / scale;
+      ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+      ctx.strokeText(label, x, y + h + 2 / scale);
+      ctx.fillStyle = '#475569';
+      ctx.fillText(label, x, y + h + 2 / scale);
+    }
+    ctx.restore();
+  }, [highlight, hoverNode, selectedDoc, showLabels]);
 
   const drawNode = useCallback((node: N, ctx: CanvasRenderingContext2D, scale: number) => {
     if (node.x === undefined || node.y === undefined) return;
     positions.current.set(node.id as string, { x: node.x, y: node.y });
+    if (node.kind === 'document') {
+      drawDocument(node, ctx, scale);
+      return;
+    }
     const id = node.id as string;
     const r = nodeRadius(node);
     const color = node.community ? topicIndex.get(node.community)?.color ?? NO_COMMUNITY : NO_COMMUNITY;
@@ -182,7 +262,7 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
       ctx.fillText(node.name, node.x, node.y + r + 2 / scale);
     }
     ctx.restore();
-  }, [highlight, hoverNode, selectedNode, showLabels, topicIndex]);
+  }, [drawDocument, highlight, hoverNode, selectedNode, showLabels, topicIndex]);
 
   const paintPointer = useCallback((node: N, color: string, ctx: CanvasRenderingContext2D) => {
     if (node.x === undefined || node.y === undefined) return;
@@ -194,15 +274,23 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
 
   const edgeState = useCallback((l: L) => {
     const id = l.id as string;
+    if (l.kind === 'doc') {
+      // a document → entity link is shown when it is evidence for the current answer, or on focus
+      const src = endId(l.source);
+      const doc = docIdOf(src);
+      const cited = (highlight?.documents?.has(doc) ?? false) && (highlight?.nodes.has(endId(l.target)) ?? false);
+      return { path: false, hl: cited, hover: id === hoverLink || hoverNode === src || selectedDoc === doc };
+    }
     return {
       path: highlight?.pathEdges.has(id) ?? false,
       hl: (highlight?.edges.has(id) ?? false) || id === selectedEdge,
       hover: id === hoverLink,
     };
-  }, [highlight, selectedEdge, hoverLink]);
+  }, [highlight, selectedEdge, selectedDoc, hoverLink, hoverNode]);
 
   const linkColor = useCallback((l: L) => {
     const s = edgeState(l);
+    if (l.kind === 'doc') return s.hl ? 'rgba(217,119,6,0.85)' : 'rgba(100,116,139,0.55)';
     if (s.path) return PATH_COLOR;
     if (s.hl || s.hover) return HL_EDGE;
     return highlight ? 'rgba(148,163,184,0.14)' : 'rgba(100,116,139,0.42)';
@@ -210,12 +298,14 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
 
   const linkWidth = useCallback((l: L) => {
     const s = edgeState(l);
+    if (l.kind === 'doc') return s.hl ? 1.6 : 1;
     if (s.path) return 3.4;
     if (s.hl || s.hover) return 2.2;
     return 0.6 + 0.35 * Math.min(l.evidence_count ?? 1, 4);
   }, [edgeState]);
 
   const drawLinkLabel = useCallback((l: L, ctx: CanvasRenderingContext2D, scale: number) => {
+    if (l.kind === 'doc') return;
     const s = edgeState(l);
     if (!(s.path || s.hl || s.hover || (showLabels && !highlight && scale > edgeLabelMinScale))) return;
     const a = l.source as N;
@@ -282,7 +372,7 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (q.length < 2) return [];
-    return data.nodes.filter((n) => n.name.toLowerCase().includes(q)).slice(0, 7);
+    return data.nodes.filter((n) => n.kind !== 'document' && n.name.toLowerCase().includes(q)).slice(0, 7);
   }, [query, data]);
 
   const empty = !graph || graph.nodes.length === 0;
@@ -296,14 +386,16 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
           height={size.h}
           graphData={data}
           nodeId="id"
-          nodeLabel={(n) => `${n.name} · ${n.type} · ${n.degree} relations`}
+          nodeLabel={(n) => (n.kind === 'document' ? `${n.name} · source document · mentions ${n.degree} shown entities`
+            : `${n.name} · ${n.type} · ${n.degree} relations`)}
           nodeCanvasObject={drawNode}
           nodePointerAreaPaint={paintPointer}
+          linkVisibility={(l) => l.kind !== 'doc' || edgeState(l).hl || edgeState(l).hover}
           linkColor={linkColor}
           linkWidth={linkWidth}
           linkCurvature="curvature"
-          linkLineDash={(l) => (l.cross_topic && !edgeState(l).path ? [4, 3] : null)}
-          linkDirectionalArrowLength={4}
+          linkLineDash={(l) => (l.kind === 'doc' ? [2, 3] : l.cross_topic && !edgeState(l).path ? [4, 3] : null)}
+          linkDirectionalArrowLength={(l) => (l.kind === 'doc' ? 0 : 4)}
           linkDirectionalArrowRelPos={0.92}
           linkDirectionalParticles={(l) => (edgeState(l).path ? 3 : 0)}
           linkDirectionalParticleWidth={3.5}
@@ -314,12 +406,15 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
           linkLabel={(l) => {
             const a = nodeById.get(endId(l.source));
             const b = nodeById.get(endId(l.target));
+            if (l.kind === 'doc') return `${a?.name ?? ''} mentions ${b?.name ?? ''} (${l.evidence_count}×)`;
             return `${a?.name ?? ''} — ${l.predicate} → ${b?.name ?? ''} (${l.evidence_count} evidence)`;
           }}
           linkHoverPrecision={6}
           onRenderFramePre={drawHulls}
-          onNodeClick={(n) => onSelect({ kind: 'entity', id: n.id as string })}
-          onLinkClick={(l) => onSelect({ kind: 'relation', id: l.id as string })}
+          onNodeClick={(n) => onSelect(n.kind === 'document' ? { kind: 'document', id: docIdOf(n.id as string) }
+            : { kind: 'entity', id: n.id as string })}
+          onLinkClick={(l) => onSelect(l.kind === 'doc' ? { kind: 'document', id: docIdOf(endId(l.source)) }
+            : { kind: 'relation', id: l.id as string })}
           onNodeHover={(n) => setHoverNode(n ? (n.id as string) : null)}
           onLinkHover={(l) => setHoverLink(l ? (l.id as string) : null)}
           onBackgroundClick={() => onSelect(null)}
@@ -386,11 +481,17 @@ export default function GraphView({ graph, highlight, selection, focusToken, onS
           <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5">
             <span className="hidden rounded-md bg-white/90 px-2 py-1 text-[11px] text-slate-500 ring-1 ring-slate-200 sm:inline">
               {graph!.nodes.length} nodes · {graph!.edges.length} edges · {graph!.topics.length} topics
+              {' · '}{graph!.documents.length} docs
               {graph!.truncated ? ' (top-ranked shown)' : ''}
             </span>
             <IconButton title="Toggle labels" active={showLabels} onClick={() => setShowLabels((v) => !v)}>
               <Tag className="h-4 w-4" />
             </IconButton>
+            {(graph!.doc_links?.length ?? 0) > 0 && (
+              <IconButton title="Show source documents" active={showDocs} onClick={() => setShowDocs((v) => !v)}>
+                <FileText className="h-4 w-4" />
+              </IconButton>
+            )}
             <IconButton title="Fit to view" onClick={fitHighlight}>
               <Maximize2 className="h-4 w-4" />
             </IconButton>

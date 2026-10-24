@@ -21,7 +21,8 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from backend.kb import lexicon as L
 from backend.kb.text_utils import (
-    STOPWORDS, display_name, locate_sentence, normalize_name, normalize_ws, split_sentences, tokenize,
+    STOPWORDS, display_name, find_all_ci, index_terms, locate_sentence, normalize_name, normalize_ws,
+    split_sentences, tokenize,
 )
 from backend.utils.logger import get_logger
 
@@ -72,6 +73,7 @@ _CONCEPT_LEAD_SKIP = {"the", "a", "an", "its", "their", "his", "her", "our", "th
                       "additional", "two", "three", "four", "five", "first", "both", "further", "continued"}
 _CONCEPT_STOP = set(STOPWORDS) | {"used", "using", "based", "located", "called", "known", "including", "such",
                                   "via", "per", "than", "across", "within", "during", "through", "because"}
+_HEAD_PREPOSITIONS = {"from", "of", "in", "on", "at", "near", "with", "among", "across", "around"}
 
 
 def guess_type(name: str, honorific: bool = False, prev_word: str = "") -> str:
@@ -124,17 +126,41 @@ class _Pred:
     kind: str  # verb | role | role_poss
 
 
-def _build_pred_regexes() -> List[Tuple[re.Pattern, str, bool, str]]:
-    def form_re(form: str) -> str:
-        return r"\s+".join(re.escape(w) for w in form.split())
+# Passive forms tolerate an adverb after the auxiliary and a time adverbial before "by":
+#   "was founded in 2015 by", "was originally established by", "was acquired in March 2021 by".
+# Without this, the shorter active form ("founded") matched instead and the triple came out reversed.
+_ADVERB = r"(?:[a-z]+ly|also|later|first|then|once|subsequently|eventually|recently|originally)"
+_MONTH = (r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|"
+          r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?")
+_DATE = (r"(?:(?:the\s+)?(?:early\s+|mid-?|late\s+)?\d{4}s?|" + _MONTH + r"\s+(?:\d{1,2},?\s+)?\d{4}|"
+         r"\d{1,2}\s+" + _MONTH + r"\s+\d{4})")
+_TIME_ADVERBIAL = r"(?:in|on|during|around|circa|since|from)\s+" + _DATE + r"(?:\s+(?:to|and|until)\s+" + _DATE + r")?"
+_AUX = {"is", "was", "are", "were", "been", "being"}
 
+
+def _form_re(form: str) -> str:
+    return r"\s+".join(re.escape(w) for w in form.split())
+
+
+def _passive_re(form: str) -> str:
+    words = form.split()
+    if words[-1] != "by" or len(words) < 2:
+        return _form_re(form)
+    core = [re.escape(w) for w in words[:-1]]
+    if words[0] in _AUX and len(core) >= 2:
+        core[0] += rf"(?:\s+{_ADVERB})?"
+    return r"\s+".join(core) + rf"(?:\s+{_ADVERB})?(?:\s*,?\s+{_TIME_ADVERBIAL},?)?\s+by"
+
+
+def _build_pred_regexes() -> List[Tuple[re.Pattern, str, bool, str]]:
+    form_re = _form_re
     out = []
     for canon, forms in L.ACTIVE_PREDICATES.items():
         for f in sorted(forms, key=len, reverse=True):
             out.append((re.compile(r"(?<![A-Za-z\-])" + form_re(f) + r"(?![A-Za-z\-])", re.I), canon, False, "verb"))
     for canon, forms in L.PASSIVE_PREDICATES.items():
         for f in sorted(forms, key=len, reverse=True):
-            out.append((re.compile(r"(?<![A-Za-z\-])" + form_re(f) + r"(?![A-Za-z\-])", re.I), canon, True, "verb"))
+            out.append((re.compile(r"(?<![A-Za-z\-])" + _passive_re(f) + r"(?![A-Za-z\-])", re.I), canon, True, "verb"))
     out.append((re.compile(r"(?<![A-Za-z])" + L.RECEIVED_FROM_PATTERN + r"(?![A-Za-z])", re.I), "funds", True, "verb"))
 
     roles = sorted(((r, c) for c, rs in L.ROLE_PREDICATES.items() for r in rs), key=lambda x: -len(x[0]))
@@ -155,6 +181,25 @@ _PRED_REGEXES = _build_pred_regexes()
 
 def _words(text: str) -> List[str]:
     return re.findall(r"[A-Za-z0-9$%][A-Za-z0-9$%'\-]*", text)
+
+
+_PASSIVE_AGENT_RE = re.compile(
+    r"\b(?:is|was|are|were|been|being)\b(?:\s+[\w\-]+){0,2}?\s+([\w\-]+)(?:\s+[^,.;]{0,40}?)?\s+by\s+(?:the\s+)?$", re.I)
+
+
+def passive_reversed(sentence: str, subject: str, predicate: str, obj: str) -> bool:
+    """True when the evidence says "<subject> was <predicate-verb> … by <object>" — i.e. the
+    object is the agent, so the triple (subject, predicate, object) states the reverse of the text.
+    Predicates already phrased passively ("founded by") are left alone."""
+    if predicate.split()[-1:] == ["by"]:
+        return False
+    stems = {t for form in L.predicate_surface_forms(predicate) for t in index_terms(form)}
+    subj_ends = [b for _, b in find_all_ci(sentence, subject)]
+    for start, _ in find_all_ci(sentence, obj):
+        m = _PASSIVE_AGENT_RE.search(sentence[:start])
+        if m and set(index_terms(m.group(1))) & stems and any(e <= m.start() for e in subj_ends):
+            return True
+    return False
 
 
 def _gap_ok(gap: str, max_words: int, allow_comma: bool = False) -> bool:
@@ -197,8 +242,9 @@ class HeuristicExtractor:
         entities, relations = self._run(sentences, mid_caps, concepts)
         for alias, canon in aliases:
             self._add_entity(entities, canon, guess_type(canon))
-        return ChunkExtraction(chunk_id=chunk_id, entities=list(entities.values()),
-                               relations=list(relations.values()), aliases=aliases, method="heuristic")
+        kept = [r for r in relations.values() if not passive_reversed(r.evidence, r.subject, r.predicate, r.object)]
+        return ChunkExtraction(chunk_id=chunk_id, entities=list(entities.values()), relations=kept,
+                               aliases=aliases, method="heuristic", rejected=len(relations) - len(kept))
 
     def _run(self, sentences, mid_caps, concepts):
         entities: Dict[str, ExtractedEntity] = {}
@@ -493,13 +539,17 @@ class HeuristicExtractor:
             return True
         return len(prev) == 2 and prev[0] in dets and prev[1] not in STOPWORDS and prev[1][:1].islower()
 
-    def _concept_after(self, clause: str, pos: int) -> Optional[Tuple[int, int, str]]:
+    def _concept_after(self, clause: str, pos: int, limit: Optional[int] = None) -> Optional[Tuple[int, int, str]]:
+        """Noun phrase after a predicate; stops at `limit` (the next predicate), so
+        'operates autonomous tractors built by X' yields 'autonomous tractors', not '... tractors built'."""
         toks = [(m.group(), pos + m.start(), pos + m.end()) for m in _WORD_RE.finditer(clause[pos:])]
         k = 0
         while k < len(toks) and (toks[k][0].lower() in _CONCEPT_LEAD_SKIP or toks[k][0].isdigit()):
             k += 1
         picked = []
         while k < len(toks) and len(picked) < 4:
+            if limit is not None and toks[k][1] >= limit:
+                break
             t = toks[k][0]
             tl = t.lower()
             if not t[0].isalnum() or t[:1].isupper() or tl in _CONCEPT_STOP:
@@ -532,6 +582,12 @@ class HeuristicExtractor:
         definite = bool(words) and words[0].lower() in ("the", "this", "that", "these", "those")
         while words and words[0].lower() in _CONCEPT_LEAD_SKIP:
             words = words[1:]
+        # "Soil compaction from heavy machinery reduces …" → head noun phrase before a short
+        # prepositional phrase (multi-word heads only; a lone noun there is usually too vague)
+        cut = next((i for i, w in enumerate(words) if w.lower() in _HEAD_PREPOSITIONS), None)
+        if cut is not None and cut >= 2 and len(words) - cut <= 5 \
+                and not any(w[:1].isupper() for w in words[cut:]):
+            words = words[:cut]
         if not words or len(words) > 4 or (definite and len(words) == 1):
             return None  # "The pilot installed…" is an anaphor, not a concept
         phrase = " ".join(words)
@@ -607,7 +663,7 @@ class HeuristicExtractor:
                     direct_too = len(gap_content) >= 2 and p.kind == "verb" and not p.passive
             direct: Optional[_Span] = None
             if (not objects or direct_too) and p.kind == "verb":
-                ca = self._concept_after(clause, p.end)
+                ca = self._concept_after(clause, p.end, next_pred)
                 if ca and ca[1] <= next_pred:
                     obj = self._coref_object(ca[2], recent)
                     direct = obj or _Span(ca[0], ca[1], ca[2], "Concept", "concept")
@@ -791,6 +847,9 @@ def validate_llm_extraction(data, chunk_text: str, chunk_id: str) -> ChunkExtrac
                     best, best_ov = s, ov
             sentence = best if best_ov >= 0.8 else None
         if sentence is None or not (_appears(subj, sentence) or _appears(obj, sentence)):
+            out.rejected += 1
+            continue
+        if passive_reversed(sentence, subj, pred, obj):  # "X was founded by Y" returned as X —founded→ Y
             out.rejected += 1
             continue
         key = (ns, pred, no)

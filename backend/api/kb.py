@@ -14,6 +14,7 @@ Routes (prefix /api/kb):
   GET    /chunks/{id}               a source passage + entities mentioned in it
   GET    /topics                    topic communities with grounded summaries
   POST   /topics/rebuild            recompute communities + summaries
+  POST   /graph/resync              re-extract documents missing from the active graph store
   POST   /query                     grounded answer (JSON)
   POST   /query/stream              grounded answer with live LangGraph stage events (SSE)
   GET    /examples                  demo questions (samples/questions.json)
@@ -191,6 +192,13 @@ def build_kb_routes(r: APIRouter, o: KBRouteOptions) -> APIRouter:
         async with kb._ingest_lock:
             return await kb.rebuild_topics()
     r.post("/topics/rebuild", dependencies=write)(named(rebuild_topics, "rebuild_topics"))
+
+    async def resync_graph(request: Request):
+        """E.g. after switching KB_GRAPH_STORE or wiping Neo4j: rebuild missing graph data from stored chunks."""
+        kb = o.resolve(request)
+        job = kb.start_graph_resync(recheck=True)
+        return {"job": job, "graph_store": kb.store.graph_backend}
+    r.post("/graph/resync", status_code=202, dependencies=write)(named(resync_graph, "resync_graph"))
 
     # ── questions ────────────────────────────────────────────────────────────
     async def query(request: Request, body: QueryRequest):

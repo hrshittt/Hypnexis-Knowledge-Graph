@@ -19,6 +19,8 @@ export interface GraphNode {
   doc_count: number;
   /** analysis graphs (corporate / legal / placement) carry the facts behind a node here */
   detail?: Record<string, unknown>;
+  /** set on the client for source-document nodes (id = "doc:<doc_id>") */
+  kind?: 'document';
 }
 
 export interface GraphEdge {
@@ -33,6 +35,8 @@ export interface GraphEdge {
   /** analysis graphs: counts or basis behind the edge, and the source sentences where available */
   detail?: Record<string, unknown>;
   evidence?: Citation[];
+  /** set on the client for document → entity "mentions" links */
+  kind?: 'doc';
 }
 
 /** A sentence-level source reference produced by the document analysers. */
@@ -44,6 +48,21 @@ export interface Citation {
   chunk_id: string;
   highlight: [number, number];
   section?: string | null;
+}
+
+export interface GraphDocument {
+  doc_id: string;
+  filename: string;
+  title?: string | null;
+  num_pages?: number | null;
+  num_entities?: number | null;
+  num_relations?: number | null;
+}
+
+export interface DocLink {
+  doc_id: string;
+  entity_id: string;
+  mentions: number;
 }
 
 export interface Topic {
@@ -73,7 +92,9 @@ export interface GraphPayload {
   topics: Topic[];
   topic_links: TopicLink[];
   truncated: boolean;
-  documents: { doc_id: string; filename: string }[];
+  documents: GraphDocument[];
+  /** knowledge-base graphs only (analysis graphs have no document → entity links) */
+  doc_links?: DocLink[];
 }
 
 export interface KBDocument {
@@ -118,11 +139,25 @@ export interface KBStatus {
   embedding_model: string;
   reranker: string | null;
   dense_index: boolean;
-  graph_store: string;
-  neo4j: { enabled: boolean; ok?: boolean; error?: string };
+  graph_store: GraphStoreInfo;
   warnings: string[];
   jobs: Job[];
   upload?: { max_mb: number; types: string[] };
+}
+
+export interface GraphStoreInfo {
+  backend: 'neo4j' | 'sqlite';
+  traversal: 'cypher' | 'networkx';
+  connected: boolean;
+  error?: string | null;
+  uri?: string;
+  database?: string;
+  namespace?: string;
+  /** false when another knowledge base claimed this Neo4j namespace first (misconfiguration) */
+  owns_namespace?: boolean;
+  path?: string;
+  requested: 'auto' | 'neo4j' | 'sqlite';
+  fallback_reason: string | null;
 }
 
 export interface Source {
@@ -165,6 +200,8 @@ export interface Highlight {
   edges: string[];
   path_edges: string[];
   communities: string[];
+  /** doc_ids of the documents behind the cited evidence */
+  documents: string[];
 }
 
 export interface StageEvent {
@@ -237,4 +274,5 @@ export type Selection =
   | { kind: 'relation'; id: string }
   | { kind: 'source'; source: Source }
   | { kind: 'topic'; id: string }
+  | { kind: 'document'; id: string }
   | null;

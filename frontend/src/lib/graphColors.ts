@@ -8,6 +8,8 @@ export const NO_COMMUNITY = '#94a3b8';
 export const PATH_COLOR = '#0f172a';
 export const PATH_PARTICLE = '#facc15';
 export const HL_EDGE = '#334155';
+export const DOC_COLOR = '#64748b';   // source-document nodes
+export const DOC_HL = '#fde68a';      // a document behind the current answer's cited evidence
 
 export function colorForIndex(i: number | undefined | null): string {
   if (i === undefined || i === null || i < 0) return NO_COMMUNITY;

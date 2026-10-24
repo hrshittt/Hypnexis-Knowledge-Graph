@@ -45,6 +45,10 @@ async def main(argv=None) -> int:
 
     from backend.kb.service import get_kb
     kb = get_kb()
+    if args.cmd != "reset":
+        job = await kb.resync_graph_and_wait()
+        if job:
+            print(f"graph resync ({kb.store.graph_backend}): {len(job['done'])} re-extracted, {len(job['failed'])} failed")
 
     if args.cmd in ("load-samples", "ingest"):
         paths = kb.sample_files() if args.cmd == "load-samples" else _files(args.paths)

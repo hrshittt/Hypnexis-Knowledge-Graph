@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "https://theyeetguy-ceo-clone.hf.space/api/$1"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

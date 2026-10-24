@@ -7,6 +7,9 @@ Passages:  dense (Chroma) + sparse (BM25) → Reciprocal Rank Fusion → CrossEn
 Graph:     question → entity linking (aliases, distinctive name tokens, fuzzy),
            k-shortest evidence paths between entities (multi-hop), neighbourhoods,
            and topic-community ranking for thematic questions.
+           Traversal runs where the graph lives: Cypher in Neo4j (Neo4jTraversal) or NetworkX
+           over the local SQLite graph (NetworkXTraversal). Both return candidate paths in the
+           same shape and share one scoring function, so routes behave the same on either store.
 """
 
 import difflib
@@ -14,7 +17,7 @@ import math
 import re
 import threading
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Sequence, Set
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 import networkx as nx
 import numpy as np
@@ -32,6 +35,63 @@ _NON_DISTINCTIVE = (L.ORG_WORDS | L.LOCATION_WORDS | L.FACILITY_WORDS | L.POLICY
                     | L.LOCATION_FIRST_WORDS | STOPWORDS | QUERY_FILLER)
 
 
+class NetworkXTraversal:
+    """In-memory traversal over the relations read from the local SQLite graph store."""
+
+    name = "networkx"
+
+    def __init__(self, relations: Dict[str, Dict[str, Any]], entities: Dict[str, Dict[str, Any]]):
+        U = nx.Graph()
+        for r in relations.values():
+            s, o = r["subject_id"], r["object_id"]
+            if s == o or s not in entities or o not in entities:
+                continue
+            if U.has_edge(s, o):
+                U[s][o]["rels"].append(r["relation_id"])
+            else:
+                U.add_edge(s, o, rels=[r["relation_id"]])
+        self.U = U
+
+    def neighbors(self, eid: str) -> List[Tuple[str, str]]:
+        if eid not in self.U:
+            return []
+        return [(rid, nb) for nb in self.U.neighbors(eid) for rid in self.U[eid][nb]["rels"]]
+
+    def candidate_paths(self, a: str, b: str, max_hops: int, limit: int = 200) -> List[Tuple[List[str], List[List[str]]]]:
+        if a not in self.U or b not in self.U:
+            return []
+        out: List[Tuple[List[str], List[List[str]]]] = []
+        shortest = None
+        try:
+            for nodes in nx.shortest_simple_paths(self.U, a, b):
+                hops = len(nodes) - 1
+                shortest = shortest or hops
+                if hops > max_hops or hops > shortest + 1 or len(out) >= limit:
+                    break
+                out.append((nodes, [sorted(self.U[u][v]["rels"]) for u, v in zip(nodes, nodes[1:])]))
+        except nx.NetworkXNoPath:
+            return []
+        return out
+
+    def reach(self, eid: str, hops: int) -> Dict[str, int]:
+        if eid not in self.U:
+            return {}
+        return dict(nx.single_source_shortest_path_length(self.U, eid, cutoff=hops))
+
+    def two_hop(self, eid: str, limit: int = 200) -> List[Tuple[List[str], List[List[str]]]]:
+        if eid not in self.U:
+            return []
+        direct = set(self.U.neighbors(eid))
+        out = []
+        for mid in sorted(direct):
+            for far in sorted(self.U.neighbors(mid)):
+                if far != eid and far not in direct:
+                    out.append(([eid, mid, far], [sorted(self.U[eid][mid]["rels"]), sorted(self.U[mid][far]["rels"])]))
+                    if len(out) >= limit:
+                        return out
+        return out
+
+
 class KBRetriever:
     def __init__(self, store, index, embedder, reranker=None):
         self.store = store
@@ -40,7 +100,8 @@ class KBRetriever:
         self.reranker = reranker
         self._lock = threading.RLock()
         self._version = -1
-        self.U = nx.Graph()
+        self.traversal = NetworkXTraversal({}, {})
+        self.degree: Dict[str, int] = {}
         self.entities: Dict[str, Dict[str, Any]] = {}
         self.relations: Dict[str, Dict[str, Any]] = {}
         self.alias: Dict[str, str] = {}
@@ -59,18 +120,17 @@ class KBRetriever:
             ids = set(self.alias.values()) | {r["subject_id"] for r in rels} | {r["object_id"] for r in rels}
             self.entities = self.store.get_entities(list(ids))
             self.relations = {r["relation_id"]: r for r in rels}
-            U = nx.Graph()
+            nbrs: Dict[str, Set[str]] = defaultdict(set)
             for r in rels:
                 s, o = r["subject_id"], r["object_id"]
-                if s == o or s not in self.entities or o not in self.entities:
-                    continue
-                if U.has_edge(s, o):
-                    U[s][o]["rels"].append(r)
-                else:
-                    U.add_edge(s, o, rels=[r])
-            for u, v2 in U.edges:
-                U[u][v2]["rels"].sort(key=lambda r: -int(r["evidence_count"]))
-            self.U = U
+                if s != o and s in self.entities and o in self.entities:
+                    nbrs[s].add(o)
+                    nbrs[o].add(s)
+            self.degree = {e: len(n) for e, n in nbrs.items()}  # distinct neighbours (hub penalty)
+            if self.store.graph_backend == "neo4j":
+                self.traversal = self.store.traversal()
+            else:
+                self.traversal = NetworkXTraversal(self.relations, self.entities)
             tok: Dict[str, Set[str]] = defaultdict(set)
             for eid, e in self.entities.items():
                 if e["type"] == "Concept":
@@ -208,52 +268,59 @@ class KBRetriever:
         links.sort(key=lambda l: l["pos"])
         return links[:limit]
 
-    # ── graph queries ────────────────────────────────────────────────────────
+    # ── graph queries (Neo4j Cypher or NetworkX, see self.traversal) ─────────
+    def _best_relation(self, relation_ids: Sequence[str]) -> Optional[Dict[str, Any]]:
+        """Among parallel relations on one hop, the best-evidenced one (ties: lowest id)."""
+        cands = [self.relations[r] for r in relation_ids if r in self.relations]
+        return min(cands, key=lambda r: (-int(r["evidence_count"]), r["relation_id"])) if cands else None
+
+    def _scored_path(self, nodes: List[str], hop_relations: List[List[str]]) -> Optional[Dict[str, Any]]:
+        edges = [self._best_relation(h) for h in hop_relations]
+        if not edges or any(e is None for e in edges):
+            return None
+        # prefer short, well-evidenced paths that avoid generic hub nodes
+        hops = len(edges)
+        hub = sum(math.log1p(self.degree.get(n, 0)) for n in nodes[1:-1])
+        ev = sum(min(int(e["evidence_count"]), 3) for e in edges)
+        concept = sum(1 for n in nodes[1:-1] if self.entities.get(n, {}).get("type") == "Concept")
+        score = -1.0 * hops - 0.25 * hub + 0.1 * ev - 0.3 * concept
+        return {"nodes": nodes, "edges": edges, "hops": hops, "score": round(score, 3)}
+
     def entity_relations(self, eid: str, limit: int = 12) -> List[Dict[str, Any]]:
         self.refresh()
-        if eid not in self.U:
-            return []
-        rels = [r for nb in self.U.neighbors(eid) for r in self.U[eid][nb]["rels"]]
-        rels.sort(key=lambda r: (-int(r["evidence_count"]), r["predicate"]))
-        return rels[:limit]
+        rels = {rid: self.relations[rid] for rid, _ in self.traversal.neighbors(eid) if rid in self.relations}
+        return sorted(rels.values(), key=lambda r: (-int(r["evidence_count"]), r["predicate"], r["relation_id"]))[:limit]
+
+    def neighbors(self, eid: str) -> Set[str]:
+        self.refresh()
+        return {other for rid, other in self.traversal.neighbors(eid) if rid in self.relations}
 
     def paths(self, a: str, b: str, max_hops: int = 4, k: int = 3) -> List[Dict[str, Any]]:
         self.refresh()
-        if a == b or a not in self.U or b not in self.U:
+        if a == b or a not in self.entities or b not in self.entities:
             return []
-        cands: List[Dict[str, Any]] = []
-        shortest = None
-        try:
-            for nodes in nx.shortest_simple_paths(self.U, a, b):
-                hops = len(nodes) - 1
-                shortest = shortest or hops
-                if hops > max_hops or hops > shortest + 1 or len(cands) >= 12:
-                    break
-                edges = [self.U[u][v]["rels"][0] for u, v in zip(nodes, nodes[1:])]
-                # prefer short, well-evidenced paths that avoid generic hub nodes
-                hub = sum(math.log1p(self.U.degree(n)) for n in nodes[1:-1])
-                ev = sum(min(int(e["evidence_count"]), 3) for e in edges)
-                concept = sum(1 for n in nodes[1:-1] if self.entities.get(n, {}).get("type") == "Concept")
-                score = -1.0 * hops - 0.25 * hub + 0.1 * ev - 0.3 * concept
-                cands.append({"nodes": nodes, "edges": edges, "hops": hops, "score": round(score, 3)})
-        except nx.NetworkXNoPath:
-            return []
-        cands.sort(key=lambda p: -p["score"])
+        cands = [p for p in (self._scored_path(n, h) for n, h in self.traversal.candidate_paths(a, b, max_hops)) if p]
+        cands.sort(key=lambda p: (-p["score"], p["hops"], p["nodes"]))
         return cands[:k]
+
+    def paths_from(self, eid: str, k: int = 3) -> List[Dict[str, Any]]:
+        """Best two-hop paths from one entity to entities it is not directly related to."""
+        self.refresh()
+        best: Dict[str, Dict[str, Any]] = {}
+        for nodes, hop_relations in self.traversal.two_hop(eid):
+            p = self._scored_path(nodes, hop_relations)
+            cur = best.get(nodes[-1])
+            if p and (cur is None or (-p["score"], p["nodes"]) < (-cur["score"], cur["nodes"])):
+                best[nodes[-1]] = p
+        return sorted(best.values(), key=lambda p: (-p["score"], p["nodes"]))[:k]
 
     def neighborhood(self, eid: str, hops: int = 2, limit: int = 15) -> List[Dict[str, Any]]:
         self.refresh()
-        if eid not in self.U:
-            return []
-        lengths = nx.single_source_shortest_path_length(self.U, eid, cutoff=hops)
-        rels: Dict[str, Dict[str, Any]] = {}
-        for u in lengths:
-            for v in self.U.neighbors(u):
-                if v in lengths:
-                    for r in self.U[u][v]["rels"]:
-                        rels[r["relation_id"]] = r
-        ranked = sorted(rels.values(), key=lambda r: (min(lengths.get(r["subject_id"], 9), lengths.get(r["object_id"], 9)),
-                                                      -int(r["evidence_count"])))
+        lengths = self.traversal.reach(eid, hops)
+        rels = [r for r in self.relations.values() if r["subject_id"] != r["object_id"]
+                and r["subject_id"] in lengths and r["object_id"] in lengths]
+        ranked = sorted(rels, key=lambda r: (min(lengths[r["subject_id"]], lengths[r["object_id"]]),
+                                             -int(r["evidence_count"]), r["relation_id"]))
         return ranked[:limit]
 
     def rank_topics(self, question: str, linked_ids: Sequence[str] = (), k: int = 4,

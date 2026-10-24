@@ -38,7 +38,7 @@ export default function DocumentsPage() {
   const [details, setDetails] = useState<PlatformDocument | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const all = docs.data?.documents ?? [];
+  const all = useMemo(() => docs.data?.documents ?? [], [docs.data]);
   const processing = all.some((d) => d.status === 'queued' || d.status === 'processing');
   useEffect(() => {
     if (!processing) return;

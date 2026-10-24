@@ -52,7 +52,7 @@ export function useSSEStream() {
       const decoder = new TextDecoder();
       let assistantContent = '';
 
-      while (true) {
+      for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
 
@@ -97,8 +97,8 @@ export function useSSEStream() {
           }
         }
       }
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') {
         console.log('Stream aborted');
       } else {
         console.error('Chat error:', err);

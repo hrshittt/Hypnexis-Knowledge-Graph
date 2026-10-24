@@ -19,7 +19,7 @@ def test_status_on_empty_kb(client):
     body = r.json()
     assert body["stats"]["documents"] == 0
     assert body["llm"]["active"] is False
-    assert body["graph_store"] == "sqlite"
+    assert body["graph_store"]["backend"] == "sqlite" and body["graph_store"]["traversal"] == "networkx"
 
 
 def test_upload_builds_graph_and_topics(client):

@@ -131,20 +131,14 @@ def build_kb_graph(svc):
                     for r in R.entity_relations(l["id"], limit=2):
                         b.add_relation(r)
         elif len(linked) == 1:
-            import networkx as nx
-            src = linked[0]["id"]
-            if src in R.U:
-                dist = nx.single_source_shortest_path(R.U, src, cutoff=2)
-                far = [n for n, path in dist.items() if len(path) == 3][:3]
-                for n in far:
-                    nodes = dist[n]
-                    edges = [R.U[u][v]["rels"][0] for u, v in zip(nodes, nodes[1:])]
-                    b.add_path({"nodes": nodes, "edges": edges, "hops": len(edges)})
-                    found += 1
+            for p in R.paths_from(linked[0]["id"], k=3):
+                b.add_path(p)
+                found += 1
         names = [n["name"] for p in b.paths[:1] for n in p["nodes"]]
         for p in R.search(" ".join([state["question"], *names]), k=3, doc_ids=state.get("doc_filter") or None):
             b.add_passage(p)
-        detail = f"{found} graph path(s)" + (f"; best: {b.paths[0]['text']}" if b.paths else "")
+        detail = (f"{found} graph path(s) via {R.traversal.name}"
+                  + (f"; best: {b.paths[0]['text']}" if b.paths else ""))
         return {"evidence": b.pack(), "trace": _t("retrieve_multi_hop", detail)}
 
     async def retrieve_thematic(state: KBQueryState) -> dict:
@@ -222,7 +216,7 @@ def build_kb_graph(svc):
                 sids = [s for s in (b.add_chunk_id(c) for c in best) if s]
                 e = R.entities.get(eid, {})
                 topic = comms.get(e.get("community_id") or "", {}).get("label")
-                neigh[eid] = set(R.U.neighbors(eid)) if eid in R.U else set()
+                neigh[eid] = R.neighbors(eid)
                 targets.append({"kind": "entity", "id": eid, "label": t["name"], "source_ids": sids, "fact_ids": gids,
                                 "entities": list(neigh[eid]), "topics": [topic] if topic else []})
                 b.highlight(nodes=[eid])

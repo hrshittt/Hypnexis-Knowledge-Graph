@@ -5,6 +5,7 @@ real data/ directory is never touched.
 """
 
 import asyncio
+import os
 import sys
 import time
 from pathlib import Path
@@ -15,6 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Knowledge bases built from environment settings (e.g. workspace KBs) use the local SQLite graph in
+# tests, whatever .env says (load_dotenv never overrides an existing variable); live Neo4j tests opt in.
+os.environ["KB_GRAPH_STORE"] = "sqlite"
+
 from backend.kb.config import load_settings  # noqa: E402
 from backend.kb.embeddings import HashingEmbedder  # noqa: E402
 from backend.kb.service import KnowledgeBaseService  # noqa: E402
@@ -22,8 +27,11 @@ from backend.kb.service import KnowledgeBaseService  # noqa: E402
 SAMPLES = ROOT / "samples"
 
 
-def make_service(data_dir: Path, llm=None) -> KnowledgeBaseService:
-    settings = load_settings(data_dir=data_dir, samples_dir=SAMPLES, llm_mode="off")
+def make_service(data_dir: Path, llm=None, **overrides) -> KnowledgeBaseService:
+    # graph_store="sqlite" unless a test asks otherwise, so a NEO4J_URI in .env never points the
+    # suite at a developer's real graph (Neo4j tests use their own namespace, see test_neo4j_store.py)
+    settings = load_settings(data_dir=data_dir, samples_dir=SAMPLES, llm_mode="off",
+                             **{"graph_store": "sqlite", **overrides})
     return KnowledgeBaseService(settings, embedder=HashingEmbedder(), reranker=None, llm=llm)
 
 

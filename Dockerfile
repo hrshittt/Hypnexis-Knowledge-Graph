@@ -1,6 +1,8 @@
 # ══════════════════════════════════════════════════════════════
-# CEO Digital Twin — Dockerfile for Hugging Face Spaces
-# Port: 7860 (HF standard)
+# Interactive Knowledge Base backend (+ legacy CEO twin routes)
+# Port: 7860 (Hugging Face Spaces standard; docker-compose maps it to 8000)
+# Graph store: set KB_GRAPH_STORE=neo4j and NEO4J_URI/NEO4J_USER/NEO4J_PASSWORD
+# (docker-compose.yml provides a local Neo4j; use e.g. Neo4j AuraDB when hosted)
 # ══════════════════════════════════════════════════════════════
 
 FROM python:3.12-slim

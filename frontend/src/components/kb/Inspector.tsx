@@ -27,7 +27,7 @@ export default function Inspector({ selection, graph, onSelect, onHighlightNodes
 
   useEffect(() => {
     setEntity(null); setRelation(null); setChunk(null); setError(null);
-    if (!selection || selection.kind === 'topic') return;
+    if (!selection || selection.kind === 'topic' || selection.kind === 'document') return;
     let alive = true;
     setLoading(true);
     const p =
@@ -52,7 +52,8 @@ export default function Inspector({ selection, graph, onSelect, onHighlightNodes
       <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           {selection.kind === 'entity' ? 'Entity' : selection.kind === 'relation' ? 'Relationship'
-            : selection.kind === 'source' ? `Source passage ${selection.source.id}` : 'Topic community'}
+            : selection.kind === 'source' ? `Source passage ${selection.source.id}`
+            : selection.kind === 'document' ? 'Source document' : 'Topic community'}
         </span>
         <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close inspector">
           <X className="h-4 w-4" />
@@ -147,8 +148,48 @@ export default function Inspector({ selection, graph, onSelect, onHighlightNodes
         )}
 
         {selection.kind === 'topic' && <TopicView id={selection.id} graph={graph} onSelect={onSelect} api={kbApi} />}
+        {selection.kind === 'document' && (
+          <DocumentView id={selection.id} graph={graph} onSelect={onSelect} onHighlightNodes={onHighlightNodes} />
+        )}
       </div>
     </aside>
+  );
+}
+
+function DocumentView({ id, graph, onSelect, onHighlightNodes }: {
+  id: string; graph: GraphPayload | null; onSelect: (s: Selection) => void; onHighlightNodes: (ids: string[]) => void;
+}) {
+  const doc = graph?.documents.find((d) => d.doc_id === id);
+  if (!doc || !graph) return <p className="text-sm text-slate-500">Document no longer exists (the graph was rebuilt).</p>;
+  const names = new Map(graph.nodes.map((n) => [n.id, n.name]));
+  const links = (graph.doc_links ?? []).filter((l) => l.doc_id === id && names.has(l.entity_id))
+    .sort((a, b) => b.mentions - a.mentions);
+  return (
+    <>
+      <div>
+        <h3 className="text-lg font-semibold text-slate-900">{doc.title || doc.filename}</h3>
+        <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500"><FileText className="h-3 w-3" />{doc.filename}</p>
+        <p className="mt-1 text-xs text-slate-500">
+          {doc.num_pages ?? '?'} page(s) · {doc.num_entities ?? '?'} entities · {doc.num_relations ?? '?'} relations extracted
+        </p>
+      </div>
+      {links.length > 0 && (
+        <button onClick={() => onHighlightNodes(links.map((l) => l.entity_id))}
+          className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+          <Network className="h-4 w-4" /> Highlight the {links.length} entities it mentions
+        </button>
+      )}
+      <Section title="Entities mentioned">
+        <div className="flex flex-wrap gap-1.5">
+          {links.map((l) => (
+            <button key={l.entity_id} onClick={() => onSelect({ kind: 'entity', id: l.entity_id })}
+              className="rounded-full border border-slate-200 px-2.5 py-0.5 text-xs text-slate-700 hover:border-slate-400">
+              {names.get(l.entity_id)}{l.mentions > 1 ? ` ×${l.mentions}` : ''}
+            </button>
+          ))}
+        </div>
+      </Section>
+    </>
   );
 }
 

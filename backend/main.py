@@ -79,9 +79,13 @@ async def lifespan(app: FastAPI):
     log.info("   Warming up Knowledge Base (embedder, reranker, graph store)...")
     try:
         from backend.kb.service import get_kb
-        get_kb()
+        kb = get_kb()
         _startup_status["knowledge_base"] = True
-        log.success("   Knowledge Base ready.")
+        log.success(f"   Knowledge Base ready (graph store: {kb.store.graph_backend}).")
+        job = kb.start_graph_resync()
+        if job:
+            log.info(f"   Re-extracting {len(job['doc_ids'])} document(s) into the {kb.store.graph_backend} graph store "
+                     f"(job {job['id']}).")
     except Exception as e:
         log.error(f"   Knowledge Base warm-up failed (API returns 503 with the reason): {e}")
 
@@ -177,13 +181,25 @@ async def security_headers(request: Request, call_next):
         response.headers.setdefault("Cache-Control", "no-store")
     return response
 
+
+# The graph database dropping out mid-request is a 503 (temporarily unavailable), not a 500.
+try:
+    from neo4j.exceptions import ServiceUnavailable, SessionExpired
+
+    async def _graph_db_unavailable(request: Request, exc: Exception):
+        return JSONResponse(status_code=503, content={"detail": f"Graph database (Neo4j) unavailable: {exc}"})
+
+    app.add_exception_handler(ServiceUnavailable, _graph_db_unavailable)
+    app.add_exception_handler(SessionExpired, _graph_db_unavailable)
+except ImportError:
+    pass
+
 # ─── CORS (restricted to known origins) ──────────────────────────────────────
+# Local dev servers only; add your deployed frontend's origin(s) with CORS_ORIGINS.
 ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
-    "https://anaxee-ceo-clone.vercel.app",
-    "https://theyeetguy-ceo-clone.hf.space",
 ]
 # Allow extra origins from env (comma-separated)
 extra = os.getenv("CORS_ORIGINS", "")
@@ -246,8 +262,13 @@ async def health():
     except Exception:
         checks["graph"] = False
 
-    # The knowledge base works without Gemini (heuristic/extractive mode)
-    status = "ok" if checks["knowledge_base"] else "degraded"
+    graph_store = None
+    if kb_service._kb is not None:
+        graph_store = kb_service._kb.store.graph_info()
+        checks["graph_store"] = bool(graph_store.get("connected"))
+
+    # The knowledge base works without Gemini (heuristic/extractive mode), but not without its graph store
+    status = "ok" if checks["knowledge_base"] and checks.get("graph_store", True) else "degraded"
     try:
         services.db().one("SELECT 1 AS ok")
         checks["platform_db"] = True
@@ -259,6 +280,7 @@ async def health():
         "service": "Hypnexis — Knowledge Graph Intelligence Platform",
         "version": "4.0.0",
         "checks": checks,
+        "graph_store": graph_store,
         "kb_error": kb_service.kb_init_error(),
     }
 

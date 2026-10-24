@@ -23,13 +23,16 @@ dependencies = [
     "slowapi>=0.1.9",
     "networkx>=3.2",
     "pypdf>=4.0",
+    "neo4j>=5.20,<6",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "httpx>=0.27"]
-neo4j = ["neo4j>=5.20"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q -p no:cacheprovider"
+markers = [
+    "neo4j: integration tests against a real Neo4j server (skipped unless NEO4J_TEST_URI is reachable)",
+]
 

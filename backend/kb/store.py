@@ -1,9 +1,16 @@
 """
-KnowledgeStore — persistent graph + document store (SQLite, WAL mode).
+KnowledgeStore — document store + local (fallback) graph store (SQLite, WAL mode).
 
-Tables
-  documents        uploaded files (sha256-unique → duplicate detection), status lifecycle
+Always in SQLite (application records)
+  documents        uploaded files (sha256-unique → duplicate detection), status lifecycle,
+                   and which graph store holds each document's triples (graph_backend)
   chunks           sentence-aligned passages with page + char offsets
+  summary_cache    topic summaries keyed by member signature
+  meta             graph_version counter etc.
+
+Graph tables — used only when SQLite is the active graph store (KB_GRAPH_STORE=sqlite, or
+auto without a reachable Neo4j). With Neo4j active, Neo4jKnowledgeStore (neo4j_store.py)
+overrides every graph method and these tables stay unused.
   entities         graph nodes (canonical name, type, description, community)
   aliases          normalised surface form → entity (dedup + question linking)
   mentions         entity ↔ chunk occurrences (extraction or alias scan)
@@ -11,17 +18,16 @@ Tables
   evidence         verbatim sentence(s) supporting each edge, per chunk
   communities      topic communities with grounded summaries
   community_links  cross-topic connections (bridge relations)
-  summary_cache    topic summaries keyed by member signature
-  meta             graph_version counter etc.
 
 All access goes through one connection guarded by an RLock (FastAPI handlers and
-the ingestion task share it). Optional Neo4j mirroring lives in neo4j_sync.py.
+the ingestion task share it).
 """
 
 import json
 import sqlite3
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -89,6 +95,9 @@ class StoreError(RuntimeError):
 
 
 class KnowledgeStore:
+    graph_backend = "sqlite"   # which store holds entities/relations/topics
+    graph_id = "sqlite"        # recorded per document, so a store switch triggers re-extraction
+
     def __init__(self, path: Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -99,9 +108,23 @@ class KnowledgeStore:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.executescript(_SCHEMA)
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(documents)")}
+            if "graph_backend" not in cols:  # databases created before the Neo4j graph store
+                self._conn.execute("ALTER TABLE documents ADD COLUMN graph_backend TEXT")
             self._conn.commit()
         except sqlite3.DatabaseError as e:
             raise StoreError(f"Knowledge store at {self.path} is unreadable: {e}") from e
+
+    owns_namespace = True  # the SQLite graph belongs to this database alone
+
+    def graph_info(self) -> Dict[str, Any]:
+        return {"backend": "sqlite", "traversal": "networkx", "connected": True, "path": str(self.path)}
+
+    def instance_id(self) -> str:
+        """Random id of this knowledge base (stable for the life of its SQLite file)."""
+        with self.tx() as c:
+            c.execute("INSERT OR IGNORE INTO meta(key, value) VALUES('kb_instance_id', ?)", (uuid.uuid4().hex,))
+        return self._one("SELECT value FROM meta WHERE key='kb_instance_id'")["value"]
 
     # ── plumbing ──────────────────────────────────────────────────────────────
     @contextmanager
@@ -219,12 +242,6 @@ class KnowledgeStore:
     def alias_index(self) -> Dict[str, str]:
         return {r["norm"]: r["entity_id"] for r in self._q("SELECT norm, entity_id FROM aliases")}
 
-    def aliases_by_entity(self) -> Dict[str, List[str]]:
-        out: Dict[str, List[str]] = {}
-        for r in self._q("SELECT entity_id, alias FROM aliases"):
-            out.setdefault(r["entity_id"], []).append(r["alias"])
-        return out
-
     def entity_info(self) -> Dict[str, Tuple[str, str]]:
         return {r["entity_id"]: (r["name"], r["type"]) for r in self._q("SELECT entity_id, name, type FROM entities")}
 
@@ -276,7 +293,7 @@ class KnowledgeStore:
     def entity_mentions(self) -> List[Tuple[str, str, str]]:
         return [(r["entity_id"], r["chunk_id"], r["doc_id"]) for r in self._q(
             "SELECT m.entity_id, m.chunk_id, m.doc_id FROM mentions m JOIN documents d ON d.doc_id=m.doc_id "
-            "WHERE d.status='ready'")]
+            "WHERE d.status='ready' ORDER BY m.entity_id, m.chunk_id")]
 
     def get_entity(self, entity_id: str) -> Optional[Dict[str, Any]]:
         row = self._one("SELECT * FROM entities WHERE entity_id=?", (entity_id,))
@@ -385,22 +402,42 @@ class KnowledgeStore:
                       (key, t["label"], t["summary"], json.dumps(t["keywords"]), t["method"],
                        json.dumps(t["evidence_chunk_ids"]), time.time()))
 
-    # ── deletion ─────────────────────────────────────────────────────────────
-    def delete_document(self, doc_id: str) -> Dict[str, int]:
-        """Remove a document and everything derived only from it; prune orphan nodes/edges."""
+    # ── graph lifecycle per document ─────────────────────────────────────────
+    def ensure_graph_chunks(self, doc_id: str) -> None:
+        """Provenance nodes for a document's chunks (only the Neo4j store needs them)."""
+
+    def graph_doc_ids(self) -> set:
+        """Documents that have graph data in this store (the SQLite graph shares the DB with chunks)."""
+        return {r["doc_id"] for r in self._q("SELECT DISTINCT doc_id FROM chunks")}
+
+    def delete_doc_graph(self, doc_id: str) -> Dict[str, int]:
+        """Remove the evidence/mentions a document contributed; prune orphan edges, nodes and aliases."""
         with self.tx() as c:
             c.execute("DELETE FROM evidence WHERE doc_id=?", (doc_id,))
             r_del = c.execute("DELETE FROM relations WHERE relation_id NOT IN (SELECT DISTINCT relation_id FROM evidence)").rowcount
             c.execute("DELETE FROM mentions WHERE doc_id=?", (doc_id,))
-            c.execute("DELETE FROM chunks WHERE doc_id=?", (doc_id,))
             e_del = c.execute(
                 "DELETE FROM entities WHERE entity_id NOT IN (SELECT entity_id FROM mentions) "
                 "AND entity_id NOT IN (SELECT subject_id FROM relations) "
                 "AND entity_id NOT IN (SELECT object_id FROM relations)").rowcount
             c.execute("DELETE FROM aliases WHERE entity_id NOT IN (SELECT entity_id FROM entities)")
-            c.execute("DELETE FROM documents WHERE doc_id=?", (doc_id,))
             self.bump_version(c)
         return {"relations_removed": r_del, "entities_removed": e_del}
+
+    def delete_chunks(self, doc_id: str) -> None:
+        with self.tx() as c:
+            c.execute("DELETE FROM chunks WHERE doc_id=?", (doc_id,))
+            self.bump_version(c)
+
+    # ── deletion ─────────────────────────────────────────────────────────────
+    def delete_document(self, doc_id: str) -> Dict[str, int]:
+        """Remove a document and everything derived only from it; prune orphan nodes/edges."""
+        stats = self.delete_doc_graph(doc_id)
+        with self.tx() as c:
+            c.execute("DELETE FROM chunks WHERE doc_id=?", (doc_id,))
+            c.execute("DELETE FROM documents WHERE doc_id=?", (doc_id,))
+            self.bump_version(c)
+        return stats
 
     def reset(self) -> None:
         """Wipe the knowledge base tables (documents, graph, topics). Used by the explicit reset endpoint."""
@@ -426,3 +463,31 @@ class KnowledgeStore:
             "relations": n("SELECT COUNT(DISTINCT r.relation_id) FROM relations r JOIN evidence e ON e.relation_id=r.relation_id"),
             "topics": n("SELECT COUNT(*) FROM communities"),
         }
+
+
+def open_store(settings) -> Tuple[KnowledgeStore, Dict[str, Any]]:
+    """Open the store for KB_GRAPH_STORE; returns (store, selection) where selection says which
+    graph store is active and, for a fallback, why. Never falls back silently: `neo4j` mode raises,
+    `auto` mode reports the reason (surfaced in /api/kb/status and the UI)."""
+    mode = settings.graph_store
+    if mode not in ("auto", "neo4j", "sqlite"):
+        raise StoreError(f"KB_GRAPH_STORE must be 'auto', 'neo4j' or 'sqlite' (got {mode!r}).")
+    if mode == "neo4j" or (mode == "auto" and settings.neo4j_uri):
+        if not settings.neo4j_uri:
+            raise StoreError("KB_GRAPH_STORE=neo4j but NEO4J_URI is not set.")
+        try:
+            from backend.kb.neo4j_store import Neo4jKnowledgeStore
+            store = Neo4jKnowledgeStore(settings.sqlite_path, settings.neo4j_uri, settings.neo4j_user,
+                                        settings.neo4j_password, settings.neo4j_database, settings.neo4j_namespace)
+            return store, {"requested": mode, "fallback_reason": None}
+        except ImportError as e:
+            err: Exception = StoreError(f"the neo4j Python driver is not installed ({e}); run pip install -r requirements.txt")
+        except StoreError as e:
+            err = e
+        if mode == "neo4j":
+            raise StoreError(f"KB_GRAPH_STORE=neo4j but Neo4j is unavailable: {err}") from err
+        reason = (f"NEO4J_URI is set but Neo4j is unavailable ({err}). Using the local SQLite + NetworkX "
+                  f"graph store instead; set KB_GRAPH_STORE=neo4j to make this an error.")
+        return KnowledgeStore(settings.sqlite_path), {"requested": mode, "fallback_reason": reason}
+    reason = None if mode == "sqlite" else "NEO4J_URI is not set — local SQLite + NetworkX graph store (development mode)."
+    return KnowledgeStore(settings.sqlite_path), {"requested": mode, "fallback_reason": reason}
